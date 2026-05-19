@@ -255,8 +255,8 @@ async function discoverModels(providerId, providerConfig = {}, options = {}) {
   }
 
   const warning = adapterResult?.ok === false
-    ? `${adapterResult?.warning || 'Live model discovery failed.'} No usable model list found. Please manually enter a model ID.`
-    : 'No usable model list found. Please manually enter a model ID.';
+    ? `${adapterResult?.warning || 'Live model discovery failed.'} No usable model list found. Manual entry required. Please manually enter a model ID.`
+    : 'No usable model list found. Manual entry required. Please manually enter a model ID.';
 
   return {
     providerId,

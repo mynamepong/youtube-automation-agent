@@ -12,7 +12,8 @@
         "json": true
       },
       "providerDocsUrl": "https://platform.openai.com/docs/models",
-      "verifiedAt": "2026-05-20"
+      "verifiedAt": "2026-05-20",
+      "verificationNote": "Exact model ID appears in the official OpenAI model page under Frontier models."
     },
     {
       "id": "gpt-5.4",
@@ -26,7 +27,8 @@
         "json": true
       },
       "providerDocsUrl": "https://platform.openai.com/docs/models",
-      "verifiedAt": "2026-05-20"
+      "verifiedAt": "2026-05-20",
+      "verificationNote": "Exact model ID appears in the official OpenAI model page under Frontier models."
     },
     {
       "id": "gpt-5.4-mini",
@@ -40,7 +42,8 @@
         "json": true
       },
       "providerDocsUrl": "https://platform.openai.com/docs/models",
-      "verifiedAt": "2026-05-20"
+      "verifiedAt": "2026-05-20",
+      "verificationNote": "Exact model ID appears in the official OpenAI model page under Frontier models."
     }
   ],
   "gemini": [
@@ -56,7 +59,8 @@
         "json": true
       },
       "providerDocsUrl": "https://ai.google.dev/gemini-api/docs/models",
-      "verifiedAt": "2026-05-20"
+      "verifiedAt": "2026-05-20",
+      "verificationNote": "Exact model ID appears in the official Gemini models page under the Gemini 2.5 Pro section."
     },
     {
       "id": "gemini-2.5-flash",
@@ -70,7 +74,8 @@
         "json": true
       },
       "providerDocsUrl": "https://ai.google.dev/gemini-api/docs/models",
-      "verifiedAt": "2026-05-20"
+      "verifiedAt": "2026-05-20",
+      "verificationNote": "Exact model ID appears in the official Gemini models page under the Gemini 2.5 Flash section."
     },
     {
       "id": "gemini-2.5-flash-lite",
@@ -84,7 +89,8 @@
         "json": true
       },
       "providerDocsUrl": "https://ai.google.dev/gemini-api/docs/models",
-      "verifiedAt": "2026-05-20"
+      "verifiedAt": "2026-05-20",
+      "verificationNote": "Exact model ID appears in the official Gemini models page under the Gemini 2.5 Flash-Lite section."
     }
   ],
   "anthropic": [
@@ -100,7 +106,8 @@
         "json": true
       },
       "providerDocsUrl": "https://docs.anthropic.com/en/docs/about-claude/models/overview",
-      "verifiedAt": "2026-05-20"
+      "verifiedAt": "2026-05-20",
+      "verificationNote": "Exact model ID appears in the official Anthropic models overview table."
     },
     {
       "id": "claude-sonnet-4-20250514",
@@ -114,7 +121,8 @@
         "json": true
       },
       "providerDocsUrl": "https://docs.anthropic.com/en/docs/about-claude/models/overview",
-      "verifiedAt": "2026-05-20"
+      "verifiedAt": "2026-05-20",
+      "verificationNote": "Exact model ID appears in the official Anthropic models overview table."
     },
     {
       "id": "claude-3-5-haiku-20241022",
@@ -128,82 +136,11 @@
         "json": true
       },
       "providerDocsUrl": "https://docs.anthropic.com/en/docs/about-claude/models/overview",
-      "verifiedAt": "2026-05-20"
+      "verifiedAt": "2026-05-20",
+      "verificationNote": "Exact model ID appears in the official Anthropic models overview table."
     }
   ],
-  "deepseek": [
-    {
-      "id": "deepseek-v4-pro",
-      "displayName": "DeepSeek V4 Pro",
-      "tier": "premium",
-      "capabilities": {
-        "text": true,
-        "vision": false,
-        "audio": false,
-        "reasoning": true,
-        "json": true
-      },
-      "providerDocsUrl": "https://api-docs.deepseek.com/news/news260424",
-      "verifiedAt": "2026-05-20"
-    },
-    {
-      "id": "deepseek-v4-flash",
-      "displayName": "DeepSeek V4 Flash",
-      "tier": "balanced",
-      "capabilities": {
-        "text": true,
-        "vision": false,
-        "audio": false,
-        "reasoning": true,
-        "json": true
-      },
-      "providerDocsUrl": "https://api-docs.deepseek.com/news/news260424",
-      "verifiedAt": "2026-05-20"
-    }
-  ],
-  "qwen": [
-    {
-      "id": "qwen3-max",
-      "displayName": "Qwen3 Max",
-      "tier": "premium",
-      "capabilities": {
-        "text": true,
-        "vision": false,
-        "audio": false,
-        "reasoning": true,
-        "json": true
-      },
-      "providerDocsUrl": "https://help.aliyun.com/zh/model-studio/model",
-      "verifiedAt": "2026-05-20"
-    },
-    {
-      "id": "qwen3.6-plus",
-      "displayName": "Qwen3.6 Plus",
-      "tier": "balanced",
-      "capabilities": {
-        "text": true,
-        "vision": true,
-        "audio": false,
-        "reasoning": false,
-        "json": true
-      },
-      "providerDocsUrl": "https://help.aliyun.com/zh/model-studio/model",
-      "verifiedAt": "2026-05-20"
-    },
-    {
-      "id": "qwen3.6-flash",
-      "displayName": "Qwen3.6 Flash",
-      "tier": "cheap",
-      "capabilities": {
-        "text": true,
-        "vision": true,
-        "audio": false,
-        "reasoning": false,
-        "json": true
-      },
-      "providerDocsUrl": "https://help.aliyun.com/zh/model-studio/model",
-      "verifiedAt": "2026-05-20"
-    }
-  ],
+  "deepseek": [],
+  "qwen": [],
   "openai_compatible_custom": []
 }

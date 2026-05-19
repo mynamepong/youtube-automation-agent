@@ -480,7 +480,7 @@ class CredentialManager {
     };
   }
 
-  buildModelChoices(models, { includeShowAll = false } = {}) {
+  buildModelChoices(models, { includeShowAll = false, annotateStatus = false, recommendedIds = new Set() } = {}) {
     const grouped = groupModelsByTier(models);
     const choices = [];
     const tierOrder = ['premium', 'balanced', 'cheap', 'reasoning', 'unknown'];
@@ -500,9 +500,22 @@ class CredentialManager {
       }[tier])} ──`));
 
       for (const model of tierModels) {
-        const deprecated = model.deprecated ? ' (deprecated)' : '';
+        const labels = [];
+        if (annotateStatus) {
+          if (model.deprecated) {
+            labels.push('deprecated');
+          }
+          if (!model.capabilities?.text) {
+            labels.push('non-text');
+          }
+          if (labels.length === 0 && !recommendedIds.has(model.id)) {
+            labels.push('not recommended');
+          }
+        }
+
+        const suffix = labels.length > 0 ? ` [${labels.join(', ')}]` : '';
         choices.push({
-          name: `${model.displayName} (${model.id})${deprecated}`,
+          name: `${model.displayName} (${model.id})${suffix}`,
           value: model.id,
         });
       }
@@ -522,6 +535,27 @@ class CredentialManager {
     });
 
     return choices;
+  }
+
+  async confirmUnsafeModelChoice(providerMeta, model) {
+    const labels = [];
+    if (model.deprecated) {
+      labels.push('deprecated');
+    }
+    if (!model.capabilities?.text) {
+      labels.push('non-text');
+    }
+
+    const answer = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'accept',
+        message: `${model.displayName} (${model.id}) is ${labels.join(' and ')} for ${providerMeta.displayName}. Use it anyway?`,
+        default: false,
+      },
+    ]);
+
+    return Boolean(answer.accept);
   }
 
   async promptManualModelId(providerMeta) {
@@ -563,8 +597,12 @@ class CredentialManager {
       return this.promptManualModelId(providerMeta);
     }
 
-    const promptSelection = async models => {
-      const choices = this.buildModelChoices(models, { includeShowAll: allModels.length > models.length });
+    const promptSelection = async (models, { annotateStatus = false } = {}) => {
+      const choices = this.buildModelChoices(models, {
+        includeShowAll: allModels.length > models.length,
+        annotateStatus,
+        recommendedIds,
+      });
       const defaultChoice = manualPreferred ? '__manual_model_id__' : (choices.find(choice => choice && choice.value && !String(choice.value).startsWith('__'))?.value || '__manual_model_id__');
 
       const answer = await inquirer.prompt([
@@ -578,11 +616,19 @@ class CredentialManager {
       ]);
 
       if (answer.selection === '__show_all_models__') {
-        return promptSelection(allModels);
+        return promptSelection(allModels, { annotateStatus: true });
       }
 
       if (answer.selection === '__manual_model_id__') {
         return this.promptManualModelId(providerMeta);
+      }
+
+      const selectedModel = models.find(model => model.id === answer.selection);
+      if (annotateStatus && selectedModel && (selectedModel.deprecated || !selectedModel.capabilities?.text)) {
+        const accepted = await this.confirmUnsafeModelChoice(providerMeta, selectedModel);
+        if (!accepted) {
+          return promptSelection(models, { annotateStatus });
+        }
       }
 
       return answer.selection;

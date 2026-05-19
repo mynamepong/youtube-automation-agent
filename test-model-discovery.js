@@ -41,8 +41,17 @@ async function runReadOnlyCheck() {
         models: {
           list: async () => ({
             data: [
-              { id: 'gpt-5.5', object: 'model' },
-              { id: 'gpt-3.5-turbo', object: 'model' },
+              {
+                id: 'provider-premium-live-model',
+                object: 'model',
+                capabilities: { text: true, vision: true, audio: false, reasoning: true, json: true },
+              },
+              {
+                id: 'provider-preview-model',
+                object: 'model',
+                capabilities: { text: true, vision: false, audio: false, reasoning: false, json: true },
+                deprecated: true,
+              },
             ],
           }),
         },

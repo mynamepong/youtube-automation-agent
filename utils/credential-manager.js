@@ -7,8 +7,13 @@ const { Logger } = require('./logger');
 const {
   getProvider,
   listProviders,
+  listProviderChoices,
   isSupportedProvider,
 } = require('./llm-provider-registry');
+const {
+  getTemporaryModelChoices,
+  isManualModelEntryProvider,
+} = require('./llm-model-presets');
 
 class CredentialManager {
   constructor() {
@@ -80,46 +85,45 @@ class CredentialManager {
       ? aiConfig.selectedModels
       : {};
     const explicitEnabledProviders = Array.isArray(aiConfig?.enabledProviders)
-      ? aiConfig.enabledProviders.filter(providerId => isSupportedProvider(providerId))
+      ? [...new Set(aiConfig.enabledProviders.filter(providerId => isSupportedProvider(providerId)))]
       : [];
     const explicitMode = typeof aiConfig?.mode === 'string' && ['single', 'fallback', 'multi'].includes(aiConfig.mode)
       ? aiConfig.mode
       : null;
-    const hasLegacyAI = Boolean(this.credentials.openai || this.credentials.gemini);
-    const useLegacyInference = !aiConfig && hasLegacyAI;
+    const hasLegacyOpenAI = this.credentials.openai && typeof this.credentials.openai === 'object';
+    const hasLegacyGemini = this.credentials.gemini && typeof this.credentials.gemini === 'object';
+    const useLegacyInference = !aiConfig && (hasLegacyOpenAI || hasLegacyGemini);
 
     const normalizedProviders = {};
     const normalizedSelectedModels = {};
+    const normalizedEnabledProviders = [];
 
     const getString = value => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
-    const resolveLegacyProvider = providerId => {
-      if (providerId === 'openai') {
-        return this.credentials.openai && typeof this.credentials.openai === 'object' ? this.credentials.openai : null;
+    const getLegacyEntry = providerId => {
+      if (providerId === 'openai' && hasLegacyOpenAI) {
+        return this.credentials.openai;
       }
 
-      if (providerId === 'gemini') {
-        return this.credentials.gemini && typeof this.credentials.gemini === 'object' ? this.credentials.gemini : null;
+      if (providerId === 'gemini' && hasLegacyGemini) {
+        return this.credentials.gemini;
       }
 
       return null;
     };
 
-    const resolveModel = (providerId, providerEntry, legacyEntry) => {
-      return getString(providerEntry?.model)
-        || getString(explicitSelectedModels[providerId])
-        || getString(legacyEntry?.model)
-        || null;
+    const shouldMaterializeProvider = providerId => {
+      if (useLegacyInference) {
+        return Boolean(getLegacyEntry(providerId));
+      }
+
+      return Boolean(
+        Object.prototype.hasOwnProperty.call(explicitProviders, providerId)
+        || explicitEnabledProviders.includes(providerId)
+        || Object.prototype.hasOwnProperty.call(explicitSelectedModels, providerId),
+      );
     };
 
-    const resolveBaseUrl = (providerId, providerEntry, legacyEntry) => {
-      const providerMeta = getProvider(providerId);
-      return getString(providerEntry?.baseUrl)
-        || getString(legacyEntry?.baseUrl)
-        || providerMeta?.defaultBaseUrl
-        || null;
-    };
-
-    const resolveEnabled = (providerId, providerEntry, legacyEntry) => {
+    const inferEnabled = (providerId, providerEntry, legacyEntry) => {
       if (providerEntry && providerEntry.enabled === false) {
         return false;
       }
@@ -128,8 +132,7 @@ class CredentialManager {
         return true;
       }
 
-      const inEnabledList = explicitEnabledProviders.includes(providerId);
-      if (inEnabledList) {
+      if (explicitEnabledProviders.includes(providerId)) {
         return true;
       }
 
@@ -140,29 +143,41 @@ class CredentialManager {
       return false;
     };
 
+    const inferModel = (providerId, providerEntry, legacyEntry) => {
+      return getString(providerEntry?.model)
+        || getString(explicitSelectedModels[providerId])
+        || getString(legacyEntry?.model)
+        || null;
+    };
+
+    const inferBaseUrl = (providerId, providerEntry, legacyEntry) => {
+      const providerMeta = getProvider(providerId);
+      return getString(providerEntry?.baseUrl)
+        || getString(legacyEntry?.baseUrl)
+        || providerMeta?.defaultBaseUrl
+        || null;
+    };
+
+    const inferApiKey = (providerEntry, legacyEntry) => {
+      return getString(providerEntry?.apiKey)
+        || getString(legacyEntry?.apiKey)
+        || '';
+    };
+
     for (const provider of supportedProviders) {
       const providerId = provider.id;
+      if (!shouldMaterializeProvider(providerId)) {
+        continue;
+      }
+
       const providerEntry = explicitProviders[providerId] && typeof explicitProviders[providerId] === 'object'
         ? explicitProviders[providerId]
         : null;
-      const legacyEntry = resolveLegacyProvider(providerId);
-      const model = resolveModel(providerId, providerEntry, legacyEntry);
-      const enabled = resolveEnabled(providerId, providerEntry, legacyEntry);
-      const baseUrl = resolveBaseUrl(providerId, providerEntry, legacyEntry);
-      const apiKey = getString(providerEntry?.apiKey)
-        || getString(legacyEntry?.apiKey)
-        || '';
-
-      const shouldMaterializeProvider = Boolean(
-        providerEntry
-        || enabled
-        || explicitEnabledProviders.includes(providerId)
-        || (useLegacyInference && legacyEntry),
-      );
-
-      if (!shouldMaterializeProvider) {
-        continue;
-      }
+      const legacyEntry = getLegacyEntry(providerId);
+      const enabled = inferEnabled(providerId, providerEntry, legacyEntry);
+      const model = inferModel(providerId, providerEntry, legacyEntry);
+      const baseUrl = inferBaseUrl(providerId, providerEntry, legacyEntry);
+      const apiKey = inferApiKey(providerEntry, legacyEntry);
 
       normalizedProviders[providerId] = {
         enabled,
@@ -176,60 +191,91 @@ class CredentialManager {
       }
     }
 
-    const enabledProviders = supportedProviders
-      .map(provider => provider.id)
-      .filter(providerId => normalizedProviders[providerId] && normalizedProviders[providerId].enabled);
+    for (const providerId of explicitEnabledProviders) {
+      if (normalizedProviders[providerId]?.enabled && !normalizedEnabledProviders.includes(providerId)) {
+        normalizedEnabledProviders.push(providerId);
+      }
+    }
+
+    for (const provider of supportedProviders) {
+      const providerId = provider.id;
+      if (normalizedProviders[providerId]?.enabled && !normalizedEnabledProviders.includes(providerId)) {
+        normalizedEnabledProviders.push(providerId);
+      }
+    }
 
     const aiConfigExists = Boolean(aiConfig);
-    if (!aiConfigExists && !hasLegacyAI && enabledProviders.length === 0) {
+    if (!aiConfigExists && !useLegacyInference && normalizedEnabledProviders.length === 0) {
       return null;
     }
 
     const preservedMode = explicitMode;
-    const inferredMode = enabledProviders.length <= 1
+    const inferredMode = normalizedEnabledProviders.length <= 1
       ? 'single'
-      : enabledProviders.length === 2
+      : normalizedEnabledProviders.length === 2
         ? 'fallback'
         : 'multi';
-    const mode = preservedMode || (useLegacyInference && enabledProviders.length === 2 ? 'fallback' : inferredMode);
+    const mode = preservedMode || (useLegacyInference && normalizedEnabledProviders.length === 2 ? 'fallback' : inferredMode);
 
     let primaryProvider = null;
-    if (
-      aiConfigExists
-      && isSupportedProvider(aiConfig.primaryProvider)
-      && normalizedProviders[aiConfig.primaryProvider]?.enabled
-    ) {
-      primaryProvider = aiConfig.primaryProvider;
-    } else if (useLegacyInference && normalizedProviders.openai?.enabled) {
-      primaryProvider = 'openai';
-    } else {
-      primaryProvider = enabledProviders[0] || null;
-    }
-
     let fallbackProvider = null;
-    if (
-      aiConfigExists
-      && isSupportedProvider(aiConfig.fallbackProvider)
-      && normalizedProviders[aiConfig.fallbackProvider]?.enabled
-      && aiConfig.fallbackProvider !== primaryProvider
-    ) {
-      fallbackProvider = aiConfig.fallbackProvider;
-    } else if (useLegacyInference && normalizedProviders.gemini?.enabled && primaryProvider === 'openai') {
-      fallbackProvider = 'gemini';
-    } else if (mode === 'fallback' && enabledProviders.length === 2) {
-      fallbackProvider = enabledProviders.find(providerId => providerId !== primaryProvider) || null;
+
+    const inferPrimaryFromEnabled = () => normalizedEnabledProviders[0] || null;
+    const inferFallbackFromEnabled = currentPrimary => normalizedEnabledProviders.find(providerId => providerId !== currentPrimary) || null;
+
+    if (mode === 'multi') {
+      primaryProvider = null;
+      fallbackProvider = null;
+    } else if (useLegacyInference) {
+      if (normalizedProviders.openai?.enabled && normalizedProviders.gemini?.enabled) {
+        primaryProvider = 'openai';
+        fallbackProvider = 'gemini';
+      } else {
+        primaryProvider = inferPrimaryFromEnabled();
+        fallbackProvider = null;
+      }
+    } else if (mode === 'fallback') {
+      const explicitPrimary = isSupportedProvider(aiConfig?.primaryProvider)
+        && normalizedProviders[aiConfig.primaryProvider]?.enabled
+        ? aiConfig.primaryProvider
+        : null;
+      primaryProvider = explicitPrimary || inferPrimaryFromEnabled();
+
+      const explicitFallback = isSupportedProvider(aiConfig?.fallbackProvider)
+        && normalizedProviders[aiConfig.fallbackProvider]?.enabled
+        && aiConfig.fallbackProvider !== primaryProvider
+        ? aiConfig.fallbackProvider
+        : null;
+      fallbackProvider = explicitFallback || inferFallbackFromEnabled(primaryProvider);
+    } else {
+      const explicitPrimary = isSupportedProvider(aiConfig?.primaryProvider)
+        && normalizedProviders[aiConfig.primaryProvider]?.enabled
+        ? aiConfig.primaryProvider
+        : null;
+      primaryProvider = explicitPrimary || inferPrimaryFromEnabled();
+      fallbackProvider = null;
     }
 
-    this.credentials.ai = {
+    if (mode === 'multi') {
+      primaryProvider = null;
+      fallbackProvider = null;
+    }
+
+    if (mode === 'single') {
+      fallbackProvider = null;
+    }
+
+    const normalizedAiConfig = {
       mode,
       primaryProvider,
       fallbackProvider,
-      enabledProviders,
+      enabledProviders: normalizedEnabledProviders,
       selectedModels: normalizedSelectedModels,
       providers: normalizedProviders,
     };
 
-    return this.credentials.ai;
+    this.credentials.ai = normalizedAiConfig;
+    return normalizedAiConfig;
   }
 
   async getAIConfig() {
@@ -440,6 +486,99 @@ class CredentialManager {
     console.log(chalk.green('✅ Gemini credentials configured successfully!'));
   }
 
+  async promptProviderApiKey(providerMeta) {
+    const answer = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: `Enter your ${providerMeta.displayName} API key:`,
+        validate: input => input.length > 0 || `${providerMeta.displayName} API key is required`,
+      },
+    ]);
+
+    return answer.apiKey;
+  }
+
+  async promptProviderBaseUrl(providerMeta) {
+    const defaultBaseUrl = providerMeta.defaultBaseUrl || '';
+    const answer = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'baseUrl',
+        message: `Enter the base URL for ${providerMeta.displayName}:`,
+        default: defaultBaseUrl || undefined,
+        validate: input => input.trim().length > 0 || 'Base URL is required',
+      },
+    ]);
+
+    return answer.baseUrl.trim();
+  }
+
+  async promptProviderModel(providerId) {
+    const providerMeta = getProvider(providerId);
+
+    if (!providerMeta) {
+      throw new Error(`Unsupported provider: ${providerId}`);
+    }
+
+    if (isManualModelEntryProvider(providerId)) {
+      const answer = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'model',
+          message: `Enter the model ID for ${providerMeta.displayName}:`,
+          validate: input => input.trim().length > 0 || 'Model ID is required',
+        },
+      ]);
+
+      return answer.model.trim();
+    }
+
+    const choices = getTemporaryModelChoices(providerId);
+    if (!choices || choices.length === 0) {
+      throw new Error(`No temporary model choices defined for ${providerId}`);
+    }
+
+    const answer = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'model',
+        message: `Select a temporary model for ${providerMeta.displayName}:`,
+        choices,
+        default: choices[0].value,
+      },
+    ]);
+
+    return answer.model;
+  }
+
+  async collectProviderConfiguration(providerId) {
+    const providerMeta = getProvider(providerId);
+    if (!providerMeta) {
+      throw new Error(`Unsupported provider: ${providerId}`);
+    }
+
+    console.log(chalk.cyan(`\n${providerMeta.displayName} Setup`));
+    console.log(chalk.gray(providerMeta.apiKeyHelpText));
+    if (providerMeta.docsUrl) {
+      console.log(chalk.gray(`Docs: ${providerMeta.docsUrl}`));
+    }
+
+    const apiKey = await this.promptProviderApiKey(providerMeta);
+    let baseUrl = providerMeta.defaultBaseUrl || null;
+    if (providerMeta.requiresBaseUrl || providerMeta.defaultBaseUrl) {
+      baseUrl = await this.promptProviderBaseUrl(providerMeta);
+    }
+    const model = await this.promptProviderModel(providerId);
+
+    return {
+      enabled: true,
+      apiKey,
+      model,
+      ...(baseUrl ? { baseUrl } : {}),
+    };
+  }
+
   // Azure Speech Services (TTS)
   async setupAzureSpeechCredentials() {
     console.log(chalk.cyan('\n🎙️  Azure Speech Services Setup'));
@@ -608,12 +747,12 @@ class CredentialManager {
     }
 
     if (!this.credentials.youtube) {
-      console.log(chalk.yellow('\n⚠️  Missing credentials for: youtube'));
+      console.log(chalk.yellow('\n⚠️  YouTube credentials are missing'));
       return false;
     }
 
     if (!this.tokens.youtube) {
-      console.log(chalk.yellow('\n⚠️  YouTube authentication required'));
+      console.log(chalk.yellow('\n⚠️  YouTube authentication token is missing'));
       return false;
     }
 
@@ -623,19 +762,68 @@ class CredentialManager {
       return false;
     }
 
+    if (aiConfig.mode === 'single') {
+      if (!aiConfig.primaryProvider || !aiConfig.enabledProviders.includes(aiConfig.primaryProvider)) {
+        console.log(chalk.yellow('\n⚠️  Single-provider mode requires a selected primary provider'));
+        return false;
+      }
+
+      if (aiConfig.fallbackProvider !== null) {
+        console.log(chalk.yellow('\n⚠️  Single-provider mode must not define a fallback provider'));
+        return false;
+      }
+    }
+
+    if (aiConfig.mode === 'fallback') {
+      if (!aiConfig.primaryProvider || !aiConfig.enabledProviders.includes(aiConfig.primaryProvider)) {
+        console.log(chalk.yellow('\n⚠️  Fallback mode requires a selected primary provider'));
+        return false;
+      }
+
+      if (!aiConfig.fallbackProvider || !aiConfig.enabledProviders.includes(aiConfig.fallbackProvider)) {
+        console.log(chalk.yellow('\n⚠️  Fallback mode requires a selected fallback provider'));
+        return false;
+      }
+
+      if (aiConfig.primaryProvider === aiConfig.fallbackProvider) {
+        console.log(chalk.yellow('\n⚠️  Fallback provider must be different from the primary provider'));
+        return false;
+      }
+    }
+
+    if (aiConfig.mode === 'multi') {
+      if (aiConfig.primaryProvider !== null || aiConfig.fallbackProvider !== null) {
+        console.log(chalk.yellow('\n⚠️  Multi-provider mode must not define primary or fallback providers'));
+        return false;
+      }
+
+      if (aiConfig.enabledProviders.length < 2) {
+        console.log(chalk.yellow('\n⚠️  Multi-provider mode requires at least two enabled providers'));
+        return false;
+      }
+    }
+
+    const providerValidationLabel = providerId => ({
+      openai: 'OpenAI',
+      gemini: 'Gemini',
+      anthropic: 'Anthropic',
+      deepseek: 'DeepSeek',
+      qwen: 'Qwen',
+      openai_compatible_custom: 'Custom OpenAI-compatible',
+    }[providerId] || providerId);
+
     for (const providerId of aiConfig.enabledProviders) {
       const providerMeta = getProvider(providerId);
       const providerConfig = await this.getProviderConfig(providerId);
 
       if (!providerConfig.apiKey) {
-        const providerName = providerMeta?.displayName || providerId;
-        console.log(chalk.yellow(`\n⚠️  ${providerName} API key is missing for selected provider: ${providerId}`));
+        const apiKeyLabel = providerValidationLabel(providerId);
+        console.log(chalk.yellow(`\n⚠️  Missing ${apiKeyLabel} API key for selected provider: ${providerId}`));
         return false;
       }
 
       if (providerMeta?.requiresBaseUrl && !providerConfig.baseUrl) {
-        const providerName = providerMeta?.displayName || providerId;
-        console.log(chalk.yellow(`\n⚠️  ${providerName} base URL is missing for selected provider: ${providerId}`));
+        console.log(chalk.yellow(`\n⚠️  Missing base URL for selected provider: ${providerId}`));
         return false;
       }
     }
@@ -645,11 +833,10 @@ class CredentialManager {
 
   async testConnections() {
     console.log(chalk.cyan('\n🔍 Testing API connections...'));
-    
+
     const results = {
       youtube: false,
-      openai: false,
-      azureSpeech: false
+      aiProviders: {},
     };
 
     // Test YouTube API
@@ -666,21 +853,29 @@ class CredentialManager {
       this.logger.error('YouTube API test failed:', error);
     }
 
-    // Test OpenAI API
-    if (this.credentials.openai) {
-      try {
-        const { Configuration, OpenAIApi } = require('openai');
-        const configuration = new Configuration({
-          apiKey: this.credentials.openai.apiKey,
-        });
-        const openai = new OpenAIApi(configuration);
-        
-        await openai.listModels();
-        results.openai = true;
-        console.log(chalk.green('✅ OpenAI API connection successful'));
-      } catch (error) {
-        console.log(chalk.red('❌ OpenAI API connection failed'));
-        this.logger.error('OpenAI API test failed:', error);
+    const aiConfig = await this.getAIConfig();
+    if (aiConfig && Array.isArray(aiConfig.enabledProviders)) {
+      for (const providerId of aiConfig.enabledProviders) {
+        const providerMeta = getProvider(providerId);
+        const providerConfig = await this.getProviderConfig(providerId);
+        const providerResult = {
+          ok: false,
+          provider: providerId,
+          model: providerConfig.model || null,
+        };
+
+        const hasRequiredApiKey = Boolean(providerConfig.apiKey);
+        const hasRequiredBaseUrl = !providerMeta?.requiresBaseUrl || Boolean(providerConfig.baseUrl);
+        const hasRequiredModel = providerMeta ? Boolean(providerConfig.model) : false;
+
+        if (hasRequiredApiKey && hasRequiredBaseUrl && hasRequiredModel) {
+          providerResult.ok = true;
+          console.log(chalk.green(`✅ ${providerMeta?.displayName || providerId} configuration is present`));
+        } else {
+          console.log(chalk.red(`❌ ${providerMeta?.displayName || providerId} configuration is incomplete`));
+        }
+
+        results.aiProviders[providerId] = providerResult;
       }
     }
 
@@ -694,7 +889,7 @@ class CredentialManager {
 
     const setupSteps = [
       { name: '🎬 YouTube API', action: () => this.setupYouTubeCredentials() },
-      { name: '🤖 AI Service (OpenAI/Gemini)', action: () => this.setupAIService() },
+      { name: '🤖 AI Service', action: () => this.setupAIService() },
       { name: '🎙️  Text-to-Speech Service', action: () => this.setupTTSService() },
       { name: '📺 Channel Configuration', action: () => this.setupChannelConfig() },
       { name: '📝 Content Configuration', action: () => this.setupContentConfig() }
@@ -713,26 +908,114 @@ class CredentialManager {
   }
 
   async setupAIService() {
-    const { service } = await inquirer.prompt([
+    const { mode } = await inquirer.prompt([
       {
         type: 'list',
-        name: 'service',
-        message: 'Select your preferred AI service:',
+        name: 'mode',
+        message: 'Select your AI setup mode:',
         choices: [
-          { name: 'OpenAI (GPT-4/GPT-3.5)', value: 'openai' },
-          { name: 'Google Gemini', value: 'gemini' },
-          { name: 'Both (OpenAI primary)', value: 'both' }
+          { name: 'Single provider', value: 'single' },
+          { name: 'Primary + fallback provider', value: 'fallback' },
+          { name: 'Multiple providers, choose per task later', value: 'multi' }
         ]
       }
     ]);
 
-    if (service === 'openai' || service === 'both') {
-      await this.setupOpenAICredentials();
+    const providerChoices = listProviderChoices();
+    const selectedProviderIds = [];
+
+    if (mode === 'single') {
+      const { providerId } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'providerId',
+          message: 'Select your AI provider:',
+          choices: providerChoices,
+        },
+      ]);
+
+      selectedProviderIds.push(providerId);
+    } else if (mode === 'fallback') {
+      const { primaryProvider } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'primaryProvider',
+          message: 'Select the primary AI provider:',
+          choices: providerChoices,
+        },
+      ]);
+
+      const { fallbackProvider } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'fallbackProvider',
+          message: 'Select the fallback AI provider:',
+          choices: providerChoices.filter(choice => choice.value !== primaryProvider),
+        },
+      ]);
+
+      selectedProviderIds.push(primaryProvider, fallbackProvider);
+    } else {
+      const { providerIds } = await inquirer.prompt([
+        {
+          type: 'checkbox',
+          name: 'providerIds',
+          message: 'Select at least two AI providers:',
+          choices: providerChoices,
+          validate: input => input.length >= 2 || 'Select at least two providers',
+        },
+      ]);
+
+      selectedProviderIds.push(...providerIds);
     }
-    
-    if (service === 'gemini' || service === 'both') {
-      await this.setupGeminiCredentials();
+
+    const selectedProviderConfigs = {};
+    for (const providerId of selectedProviderIds) {
+      selectedProviderConfigs[providerId] = await this.collectProviderConfiguration(providerId);
     }
+
+    const selectedModels = {};
+    for (const [providerId, providerConfig] of Object.entries(selectedProviderConfigs)) {
+      if (providerConfig.model) {
+        selectedModels[providerId] = providerConfig.model;
+      }
+    }
+
+    const credentialsAi = {
+      mode,
+      primaryProvider: mode === 'single'
+        ? selectedProviderIds[0]
+        : mode === 'fallback'
+          ? selectedProviderIds[0]
+          : null,
+      fallbackProvider: mode === 'fallback'
+        ? selectedProviderIds[1]
+        : null,
+      enabledProviders: [...selectedProviderIds],
+      selectedModels,
+      providers: selectedProviderConfigs,
+    };
+
+    this.credentials.ai = credentialsAi;
+    delete this.credentials.openai;
+    delete this.credentials.gemini;
+
+    if (selectedProviderConfigs.openai) {
+      this.credentials.openai = {
+        apiKey: selectedProviderConfigs.openai.apiKey,
+        model: selectedProviderConfigs.openai.model,
+      };
+    }
+
+    if (selectedProviderConfigs.gemini) {
+      this.credentials.gemini = {
+        apiKey: selectedProviderConfigs.gemini.apiKey,
+        model: selectedProviderConfigs.gemini.model || null,
+      };
+    }
+
+    await this.saveCredentials();
+    console.log(chalk.green('✅ AI service configured successfully!'));
   }
 
   async setupTTSService() {

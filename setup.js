@@ -4,6 +4,7 @@ const { Logger } = require('./utils/logger');
 const chalk = require('chalk');
 const fs = require('fs').promises;
 const path = require('path');
+const { getEnvKeyForProvider } = require('./utils/llm-provider-registry');
 
 class YouTubeAutomationSetup {
   constructor() {
@@ -93,66 +94,120 @@ class YouTubeAutomationSetup {
 
   async createEnvironmentFile() {
     console.log(chalk.cyan('\n🔧 Creating environment configuration...'));
-    
-    const envContent = `# YouTube Automation Agent Environment Configuration
-# Generated on ${new Date().toISOString()}
+    const aiConfig = await this.credentialManager.getAIConfig();
+    const selectedProviders = aiConfig?.enabledProviders || [];
+    const primaryProvider = aiConfig?.primaryProvider || '';
+    const fallbackProvider = aiConfig?.fallbackProvider || '';
 
-# Application Settings
-NODE_ENV=production
-PORT=3456
-LOG_LEVEL=info
+    const resolveModelForProvider = providerId => {
+      if (!aiConfig?.providers?.[providerId]) {
+        return '';
+      }
 
-# YouTube Settings
-YOUTUBE_REGION=US
-DEFAULT_PRIVACY_STATUS=public
+      return aiConfig.selectedModels?.[providerId]
+        || aiConfig.providers?.[providerId]?.model
+        || '';
+    };
 
-# Content Settings
-AUTO_SHORTEN_CONTENT=true
-AUTO_ADD_BACKLINKS=true
-PRESERVE_FORMATTING=true
-AUTO_RESIZE_IMAGES=true
-MAX_IMAGE_WIDTH=1280
-MAX_IMAGE_HEIGHT=720
-IMAGE_QUALITY=90
+    const resolvePrimaryModel = () => {
+      if (primaryProvider) {
+        return resolveModelForProvider(primaryProvider);
+      }
 
-# Rate Limiting
-GLOBAL_RATE_LIMIT_PER_HOUR=50
-DEFAULT_DELAY_BETWEEN_POSTS=60000
+      for (const providerId of selectedProviders) {
+        const model = resolveModelForProvider(providerId);
+        if (model) {
+          return model;
+        }
+      }
 
-# TTS Settings
-TTS_VOICE=neural_voice_1
+      return '';
+    };
 
-# Security
-JWT_SECRET=${this.generateJWTSecret()}
+    const envLines = [
+      '# YouTube Automation Agent Environment Configuration',
+      `# Generated on ${new Date().toISOString()}`,
+      '',
+      '# AI Provider Configuration',
+      `AI_PROVIDER=${aiConfig?.mode ? (primaryProvider || aiConfig.mode) : ''}`,
+      `AI_PRIMARY_PROVIDER=${primaryProvider}`,
+      `AI_FALLBACK_PROVIDER=${fallbackProvider}`,
+      `AI_MODEL=${resolvePrimaryModel()}`,
+      `AI_ENABLED_PROVIDERS=${selectedProviders.join(',')}`,
+    ];
 
-# Analytics & Monitoring
-ENABLE_ANALYTICS=true
-ANALYTICS_DB_PATH=./data/analytics.db
+    for (const providerId of selectedProviders) {
+      const providerConfig = aiConfig?.providers?.[providerId];
+      const envKey = getEnvKeyForProvider(providerId);
+      if (envKey && providerConfig?.apiKey) {
+        envLines.push(`${envKey}=${providerConfig.apiKey}`);
+      }
 
-# File Upload Settings
-MAX_FILE_SIZE=52428800
-UPLOAD_PATH=./uploads
+      if (providerId === 'openai_compatible_custom' && providerConfig?.baseUrl) {
+        envLines.push(`CUSTOM_LLM_BASE_URL=${providerConfig.baseUrl}`);
+      }
+    }
 
-# Error Handling
-RETRY_ATTEMPTS=3
-RETRY_DELAY=5000
+    envLines.push(
+      '',
+      '# Application Settings',
+      'NODE_ENV=production',
+      'PORT=3456',
+      'LOG_LEVEL=info',
+      '',
+      '# YouTube Settings',
+      'YOUTUBE_REGION=US',
+      'DEFAULT_PRIVACY_STATUS=public',
+      '',
+      '# Content Settings',
+      'AUTO_SHORTEN_CONTENT=true',
+      'AUTO_ADD_BACKLINKS=true',
+      'PRESERVE_FORMATTING=true',
+      'AUTO_RESIZE_IMAGES=true',
+      'MAX_IMAGE_WIDTH=1280',
+      'MAX_IMAGE_HEIGHT=720',
+      'IMAGE_QUALITY=90',
+      '',
+      '# Rate Limiting',
+      'GLOBAL_RATE_LIMIT_PER_HOUR=50',
+      'DEFAULT_DELAY_BETWEEN_POSTS=60000',
+      '',
+      '# TTS Settings',
+      'TTS_VOICE=neural_voice_1',
+      '',
+      '# Security',
+      `JWT_SECRET=${this.generateJWTSecret()}`,
+      '',
+      '# Analytics & Monitoring',
+      'ENABLE_ANALYTICS=true',
+      'ANALYTICS_DB_PATH=./data/analytics.db',
+      '',
+      '# File Upload Settings',
+      'MAX_FILE_SIZE=52428800',
+      'UPLOAD_PATH=./uploads',
+      '',
+      '# Error Handling',
+      'RETRY_ATTEMPTS=3',
+      'RETRY_DELAY=5000',
+      '',
+      '# Automation Settings',
+      'DAILY_CONTENT_ENABLED=true',
+      'AUTO_PUBLISH_ENABLED=true',
+      'OPTIMIZATION_ENABLED=true',
+      'CONTENT_BUFFER_DAYS=3',
+      'MAX_DAILY_POSTS=1',
+      '',
+      '# Notification Settings',
+      'NOTIFICATION_ENABLED=true',
+      '',
+      '# Debug Settings (Development only)',
+      'DEBUG_MODE=false',
+      'VERBOSE_LOGGING=false',
+      'SAVE_SCREENSHOTS=false',
+      'SCREENSHOT_PATH=./debug/screenshots',
+    );
 
-# Automation Settings
-DAILY_CONTENT_ENABLED=true
-AUTO_PUBLISH_ENABLED=true
-OPTIMIZATION_ENABLED=true
-CONTENT_BUFFER_DAYS=3
-MAX_DAILY_POSTS=1
-
-# Notification Settings
-NOTIFICATION_ENABLED=true
-
-# Debug Settings (Development only)
-DEBUG_MODE=false
-VERBOSE_LOGGING=false
-SAVE_SCREENSHOTS=false
-SCREENSHOT_PATH=./debug/screenshots
-`;
+    const envContent = envLines.join('\n');
 
     await fs.writeFile(path.join(__dirname, '.env'), envContent);
     console.log(chalk.green('✅ Environment file created'));

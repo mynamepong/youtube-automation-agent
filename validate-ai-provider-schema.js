@@ -230,6 +230,611 @@ async function main() {
   assertBaseRegistryMetadata();
 
   await runCase(
+    'single-openai',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'single',
+        primaryProvider: 'openai',
+        fallbackProvider: null,
+        enabledProviders: ['openai'],
+        selectedModels: {
+          openai: 'gpt-5.5',
+        },
+        providers: {
+          openai: {
+            enabled: true,
+            apiKey: 'sk-openai',
+            model: 'gpt-5.5',
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'single',
+      primaryProvider: 'openai',
+      fallbackProvider: null,
+      enabledProviders: ['openai'],
+      selectedModels: {
+        openai: 'gpt-5.5',
+      },
+      providers: {
+        openai: {
+          enabled: true,
+          apiKey: 'sk-openai',
+          model: 'gpt-5.5',
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'single-gemini',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'single',
+        primaryProvider: 'gemini',
+        fallbackProvider: null,
+        enabledProviders: ['gemini'],
+        selectedModels: {
+          gemini: 'gemini-2.5-flash',
+        },
+        providers: {
+          gemini: {
+            enabled: true,
+            apiKey: 'gemini-key',
+            model: 'gemini-2.5-flash',
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'single',
+      primaryProvider: 'gemini',
+      fallbackProvider: null,
+      enabledProviders: ['gemini'],
+      selectedModels: {
+        gemini: 'gemini-2.5-flash',
+      },
+      providers: {
+        gemini: {
+          enabled: true,
+          apiKey: 'gemini-key',
+          model: 'gemini-2.5-flash',
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'single-anthropic',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'single',
+        primaryProvider: 'anthropic',
+        fallbackProvider: null,
+        enabledProviders: ['anthropic'],
+        selectedModels: {
+          anthropic: 'claude-sonnet-4.5',
+        },
+        providers: {
+          anthropic: {
+            enabled: true,
+            apiKey: 'anthropic-key',
+            model: 'claude-sonnet-4.5',
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'single',
+      primaryProvider: 'anthropic',
+      fallbackProvider: null,
+      enabledProviders: ['anthropic'],
+      selectedModels: {
+        anthropic: 'claude-sonnet-4.5',
+      },
+      providers: {
+        anthropic: {
+          enabled: true,
+          apiKey: 'anthropic-key',
+          model: 'claude-sonnet-4.5',
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'single-deepseek',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'single',
+        primaryProvider: 'deepseek',
+        fallbackProvider: null,
+        enabledProviders: ['deepseek'],
+        selectedModels: {
+          deepseek: 'deepseek-chat',
+        },
+        providers: {
+          deepseek: {
+            enabled: true,
+            apiKey: 'deepseek-key',
+            model: 'deepseek-chat',
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'single',
+      primaryProvider: 'deepseek',
+      fallbackProvider: null,
+      enabledProviders: ['deepseek'],
+      selectedModels: {
+        deepseek: 'deepseek-chat',
+      },
+      providers: {
+        deepseek: {
+          enabled: true,
+          apiKey: 'deepseek-key',
+          model: 'deepseek-chat',
+          baseUrl: 'https://api.deepseek.com',
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'single-qwen',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'single',
+        primaryProvider: 'qwen',
+        fallbackProvider: null,
+        enabledProviders: ['qwen'],
+        selectedModels: {
+          qwen: 'qwen-plus',
+        },
+        providers: {
+          qwen: {
+            enabled: true,
+            apiKey: 'qwen-key',
+            model: 'qwen-plus',
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'single',
+      primaryProvider: 'qwen',
+      fallbackProvider: null,
+      enabledProviders: ['qwen'],
+      selectedModels: {
+        qwen: 'qwen-plus',
+      },
+      providers: {
+        qwen: {
+          enabled: true,
+          apiKey: 'qwen-key',
+          model: 'qwen-plus',
+          baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'custom-openai-compatible-with-base-url',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'single',
+        primaryProvider: 'openai_compatible_custom',
+        fallbackProvider: null,
+        enabledProviders: ['openai_compatible_custom'],
+        selectedModels: {
+          openai_compatible_custom: 'custom-model',
+        },
+        providers: {
+          openai_compatible_custom: {
+            enabled: true,
+            apiKey: 'custom-key',
+            model: 'custom-model',
+            baseUrl: 'https://llm.example.com/v1',
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'single',
+      primaryProvider: 'openai_compatible_custom',
+      fallbackProvider: null,
+      enabledProviders: ['openai_compatible_custom'],
+      selectedModels: {
+        openai_compatible_custom: 'custom-model',
+      },
+      providers: {
+        openai_compatible_custom: {
+          enabled: true,
+          apiKey: 'custom-key',
+          model: 'custom-model',
+          baseUrl: 'https://llm.example.com/v1',
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'custom-openai-compatible-missing-base-url',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'single',
+        primaryProvider: 'openai_compatible_custom',
+        fallbackProvider: null,
+        enabledProviders: ['openai_compatible_custom'],
+        selectedModels: {
+          openai_compatible_custom: 'custom-model',
+        },
+        providers: {
+          openai_compatible_custom: {
+            enabled: true,
+            apiKey: 'custom-key',
+            model: 'custom-model',
+          },
+        },
+      },
+    },
+    {
+      valid: false,
+      mode: 'single',
+      primaryProvider: 'openai_compatible_custom',
+      fallbackProvider: null,
+      enabledProviders: ['openai_compatible_custom'],
+      selectedModels: {
+        openai_compatible_custom: 'custom-model',
+      },
+      providers: {
+        openai_compatible_custom: {
+          enabled: true,
+          apiKey: 'custom-key',
+          model: 'custom-model',
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'fallback-openai-primary-gemini-fallback',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'fallback',
+        primaryProvider: 'openai',
+        fallbackProvider: 'gemini',
+        enabledProviders: ['openai', 'gemini'],
+        selectedModels: {
+          openai: 'gpt-5.4-mini',
+          gemini: 'gemini-2.5-flash',
+        },
+        providers: {
+          openai: {
+            enabled: true,
+            apiKey: 'sk-openai',
+            model: 'gpt-5.4-mini',
+          },
+          gemini: {
+            enabled: true,
+            apiKey: 'gemini-key',
+            model: 'gemini-2.5-flash',
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'fallback',
+      primaryProvider: 'openai',
+      fallbackProvider: 'gemini',
+      enabledProviders: ['openai', 'gemini'],
+      selectedModels: {
+        openai: 'gpt-5.4-mini',
+        gemini: 'gemini-2.5-flash',
+      },
+      providers: {
+        openai: {
+          enabled: true,
+          apiKey: 'sk-openai',
+          model: 'gpt-5.4-mini',
+          baseUrl: null,
+        },
+        gemini: {
+          enabled: true,
+          apiKey: 'gemini-key',
+          model: 'gemini-2.5-flash',
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'fallback-gemini-primary-deepseek-fallback',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'fallback',
+        primaryProvider: 'gemini',
+        fallbackProvider: 'deepseek',
+        enabledProviders: ['gemini', 'deepseek'],
+        selectedModels: {
+          gemini: 'gemini-2.5-pro',
+          deepseek: 'deepseek-reasoner',
+        },
+        providers: {
+          gemini: {
+            enabled: true,
+            apiKey: 'gemini-key',
+            model: 'gemini-2.5-pro',
+          },
+          deepseek: {
+            enabled: true,
+            apiKey: 'deepseek-key',
+            model: 'deepseek-reasoner',
+            baseUrl: 'https://api.deepseek.com',
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'fallback',
+      primaryProvider: 'gemini',
+      fallbackProvider: 'deepseek',
+      enabledProviders: ['gemini', 'deepseek'],
+      selectedModels: {
+        gemini: 'gemini-2.5-pro',
+        deepseek: 'deepseek-reasoner',
+      },
+      providers: {
+        gemini: {
+          enabled: true,
+          apiKey: 'gemini-key',
+          model: 'gemini-2.5-pro',
+          baseUrl: null,
+        },
+        deepseek: {
+          enabled: true,
+          apiKey: 'deepseek-key',
+          model: 'deepseek-reasoner',
+          baseUrl: 'https://api.deepseek.com',
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'multi-three-providers-stays-multi',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'multi',
+        primaryProvider: null,
+        fallbackProvider: null,
+        enabledProviders: ['openai', 'gemini', 'anthropic'],
+        selectedModels: {
+          openai: 'gpt-5.4',
+          gemini: 'gemini-2.5-flash',
+          anthropic: 'claude-haiku-4.5',
+        },
+        providers: {
+          openai: {
+            enabled: true,
+            apiKey: 'sk-openai',
+            model: null,
+          },
+          gemini: {
+            enabled: true,
+            apiKey: 'gemini-key',
+            model: null,
+          },
+          anthropic: {
+            enabled: true,
+            apiKey: 'anthropic-key',
+            model: null,
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'multi',
+      primaryProvider: null,
+      fallbackProvider: null,
+      enabledProviders: ['openai', 'gemini', 'anthropic'],
+      selectedModels: {
+        openai: 'gpt-5.4',
+        gemini: 'gemini-2.5-flash',
+        anthropic: 'claude-haiku-4.5',
+      },
+      providers: {
+        openai: {
+          enabled: true,
+          apiKey: 'sk-openai',
+          model: 'gpt-5.4',
+          baseUrl: null,
+        },
+        gemini: {
+          enabled: true,
+          apiKey: 'gemini-key',
+          model: 'gemini-2.5-flash',
+          baseUrl: null,
+        },
+        anthropic: {
+          enabled: true,
+          apiKey: 'anthropic-key',
+          model: 'claude-haiku-4.5',
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'selected-models-backfill-when-provider-model-missing',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'single',
+        primaryProvider: 'anthropic',
+        fallbackProvider: null,
+        enabledProviders: ['anthropic'],
+        selectedModels: {
+          anthropic: 'claude-sonnet-4.5',
+        },
+        providers: {
+          anthropic: {
+            enabled: true,
+            apiKey: 'anthropic-key',
+            model: null,
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'single',
+      primaryProvider: 'anthropic',
+      fallbackProvider: null,
+      enabledProviders: ['anthropic'],
+      selectedModels: {
+        anthropic: 'claude-sonnet-4.5',
+      },
+      providers: {
+        anthropic: {
+          enabled: true,
+          apiKey: 'anthropic-key',
+          model: 'claude-sonnet-4.5',
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'selected-gemini-needs-api-key',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'single',
+        primaryProvider: 'gemini',
+        fallbackProvider: null,
+        enabledProviders: ['gemini'],
+        selectedModels: {
+          gemini: 'gemini-2.5-flash',
+        },
+        providers: {
+          gemini: {
+            enabled: true,
+            apiKey: '',
+            model: 'gemini-2.5-flash',
+          },
+        },
+      },
+    },
+    {
+      valid: false,
+      mode: 'single',
+      primaryProvider: 'gemini',
+      fallbackProvider: null,
+      enabledProviders: ['gemini'],
+      selectedModels: {
+        gemini: 'gemini-2.5-flash',
+      },
+      providers: {
+        gemini: {
+          enabled: true,
+          apiKey: '',
+          model: 'gemini-2.5-flash',
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'unsupported-provider-is-removed',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'multi',
+        primaryProvider: null,
+        fallbackProvider: null,
+        enabledProviders: ['openai', 'gemini', 'made_up_provider'],
+        selectedModels: {
+          openai: 'gpt-5.5',
+          gemini: 'gemini-2.5-flash',
+        },
+        providers: {
+          openai: {
+            enabled: true,
+            apiKey: 'sk-openai',
+            model: 'gpt-5.5',
+          },
+          gemini: {
+            enabled: true,
+            apiKey: 'gemini-key',
+            model: 'gemini-2.5-flash',
+          },
+          made_up_provider: {
+            enabled: true,
+            apiKey: 'nope',
+            model: 'fake-model',
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'multi',
+      primaryProvider: null,
+      fallbackProvider: null,
+      enabledProviders: ['openai', 'gemini'],
+      selectedModels: {
+        openai: 'gpt-5.5',
+        gemini: 'gemini-2.5-flash',
+      },
+      providers: {
+        openai: {
+          enabled: true,
+          apiKey: 'sk-openai',
+          model: 'gpt-5.5',
+          baseUrl: null,
+        },
+        gemini: {
+          enabled: true,
+          apiKey: 'gemini-key',
+          model: 'gemini-2.5-flash',
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runCase(
     'legacy-openai-only',
     {
       youtube: youtubeCredentials,
@@ -316,238 +921,6 @@ async function main() {
           enabled: true,
           apiKey: 'gemini-legacy',
           model: null,
-          baseUrl: null,
-        },
-      },
-    },
-  );
-
-  await runCase(
-    'explicit-selected-model-backfill',
-    {
-      youtube: youtubeCredentials,
-      ai: {
-        mode: 'single',
-        primaryProvider: 'anthropic',
-        fallbackProvider: null,
-        enabledProviders: ['anthropic'],
-        selectedModels: {
-          anthropic: 'claude-sonnet-4-20250514',
-        },
-        providers: {
-          anthropic: {
-            enabled: true,
-            apiKey: 'anthropic-key',
-            model: null,
-          },
-        },
-      },
-    },
-    {
-      valid: true,
-      mode: 'single',
-      primaryProvider: 'anthropic',
-      fallbackProvider: null,
-      enabledProviders: ['anthropic'],
-      selectedModels: {
-        anthropic: 'claude-sonnet-4-20250514',
-      },
-      providers: {
-        anthropic: {
-          enabled: true,
-          apiKey: 'anthropic-key',
-          model: 'claude-sonnet-4-20250514',
-          baseUrl: null,
-        },
-      },
-    },
-  );
-
-  await runCase(
-    'multi-provider-remains-multi',
-    {
-      youtube: youtubeCredentials,
-      ai: {
-        mode: 'multi',
-        primaryProvider: 'openai',
-        fallbackProvider: 'gemini',
-        enabledProviders: ['openai', 'gemini', 'anthropic'],
-        selectedModels: {
-          openai: 'MODEL_ID_SELECTED_DURING_SETUP',
-          gemini: 'gemini-model',
-          anthropic: 'claude-sonnet-4-20250514',
-        },
-        providers: {
-          openai: {
-            enabled: true,
-            apiKey: 'sk-openai',
-            model: null,
-          },
-          gemini: {
-            enabled: true,
-            apiKey: 'gemini-key',
-            model: null,
-          },
-          anthropic: {
-            enabled: true,
-            apiKey: 'anthropic-key',
-            model: null,
-          },
-        },
-      },
-    },
-    {
-      valid: true,
-      mode: 'multi',
-      primaryProvider: 'openai',
-      fallbackProvider: 'gemini',
-      enabledProviders: ['openai', 'gemini', 'anthropic'],
-      selectedModels: {
-        openai: 'MODEL_ID_SELECTED_DURING_SETUP',
-        gemini: 'gemini-model',
-        anthropic: 'claude-sonnet-4-20250514',
-      },
-      providers: {
-        openai: {
-          enabled: true,
-          apiKey: 'sk-openai',
-          model: 'MODEL_ID_SELECTED_DURING_SETUP',
-          baseUrl: null,
-        },
-        gemini: {
-          enabled: true,
-          apiKey: 'gemini-key',
-          model: 'gemini-model',
-          baseUrl: null,
-        },
-        anthropic: {
-          enabled: true,
-          apiKey: 'anthropic-key',
-          model: 'claude-sonnet-4-20250514',
-          baseUrl: null,
-        },
-      },
-    },
-  );
-
-  await runCase(
-    'custom-openai-compatible-needs-base-url',
-    {
-      youtube: youtubeCredentials,
-      ai: {
-        mode: 'single',
-        primaryProvider: 'openai_compatible_custom',
-        fallbackProvider: null,
-        enabledProviders: ['openai_compatible_custom'],
-        selectedModels: {
-          openai_compatible_custom: 'custom-model',
-        },
-        providers: {
-          openai_compatible_custom: {
-            enabled: true,
-            apiKey: 'custom-key',
-            model: 'custom-model',
-          },
-        },
-      },
-    },
-    {
-      valid: false,
-      mode: 'single',
-      primaryProvider: 'openai_compatible_custom',
-      fallbackProvider: null,
-      enabledProviders: ['openai_compatible_custom'],
-      selectedModels: {
-        openai_compatible_custom: 'custom-model',
-      },
-      providers: {
-        openai_compatible_custom: {
-          enabled: true,
-          apiKey: 'custom-key',
-          model: 'custom-model',
-          baseUrl: null,
-        },
-      },
-    },
-  );
-
-  await runCase(
-    'selected-gemini-needs-api-key',
-    {
-      youtube: youtubeCredentials,
-      ai: {
-        mode: 'single',
-        primaryProvider: 'gemini',
-        fallbackProvider: null,
-        enabledProviders: ['gemini'],
-        selectedModels: {},
-        providers: {
-          gemini: {
-            enabled: true,
-            apiKey: '',
-            model: null,
-          },
-        },
-      },
-    },
-    {
-      valid: false,
-      mode: 'single',
-      primaryProvider: 'gemini',
-      fallbackProvider: null,
-      enabledProviders: ['gemini'],
-      selectedModels: {},
-      providers: {
-        gemini: {
-          enabled: true,
-          apiKey: '',
-          model: null,
-          baseUrl: null,
-        },
-      },
-    },
-  );
-
-  await runCase(
-    'unsupported-provider-is-removed',
-    {
-      youtube: youtubeCredentials,
-      ai: {
-        mode: 'multi',
-        primaryProvider: 'openai',
-        fallbackProvider: 'gemini',
-        enabledProviders: ['openai', 'made_up_provider'],
-        selectedModels: {
-          openai: 'MODEL_ID_SELECTED_DURING_SETUP',
-        },
-        providers: {
-          openai: {
-            enabled: true,
-            apiKey: 'sk-openai',
-            model: null,
-          },
-          made_up_provider: {
-            enabled: true,
-            apiKey: 'nope',
-            model: 'fake-model',
-          },
-        },
-      },
-    },
-    {
-      valid: true,
-      mode: 'multi',
-      primaryProvider: 'openai',
-      fallbackProvider: null,
-      enabledProviders: ['openai'],
-      selectedModels: {
-        openai: 'MODEL_ID_SELECTED_DURING_SETUP',
-      },
-      providers: {
-        openai: {
-          enabled: true,
-          apiKey: 'sk-openai',
-          model: 'MODEL_ID_SELECTED_DURING_SETUP',
           baseUrl: null,
         },
       },

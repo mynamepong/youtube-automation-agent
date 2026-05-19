@@ -101,7 +101,7 @@ async function listGeminiModels(providerConfig = {}, options = {}) {
       timeout: options.timeoutMs || 10000,
     });
 
-    const models = extractModels(response).filter(isSupportedGeminiModel);
+    const models = extractModels(response);
 
     return {
       ok: true,

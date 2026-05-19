@@ -14,6 +14,12 @@ function sortedUnique(values) {
   return [...new Set(values)].sort();
 }
 
+function assertContainsAll(actualIds, expectedIds) {
+  for (const id of expectedIds) {
+    assert.ok(actualIds.includes(id), `Expected to find ${id} in discovery results.`);
+  }
+}
+
 function makeOpenAIClient(models) {
   return {
     models: {
@@ -39,8 +45,20 @@ async function run() {
     { client: makeOpenAIClient(openaiFixture) },
   );
   assert.equal(openaiResult.ok, true);
-  assert.deepStrictEqual(sortedUnique(modelIds(openaiResult)), ['gpt-5.4-mini', 'gpt-5.5', 'o3-mini']);
+  assertContainsAll(modelIds(openaiResult), [
+    'gpt-5.5',
+    'gpt-5.4-mini',
+    'o3-mini',
+    'gpt-3.5-turbo',
+    'text-embedding-3-small',
+    'gpt-image-1',
+    'gpt-4-turbo-preview',
+  ]);
   assert.deepStrictEqual(sortedUnique(recommendedIds(openaiResult)), ['gpt-5.4-mini', 'gpt-5.5', 'o3-mini']);
+  assert.ok(!recommendedIds(openaiResult).includes('gpt-3.5-turbo'));
+  assert.ok(!recommendedIds(openaiResult).includes('gpt-4-turbo-preview'));
+  assert.ok(!recommendedIds(openaiResult).includes('text-embedding-3-small'));
+  assert.ok(!recommendedIds(openaiResult).includes('gpt-image-1'));
 
   const geminiFixture = [
     {
@@ -81,8 +99,15 @@ async function run() {
   assert.equal(geminiResult.ok, true);
   assert.equal(geminiRequestUrl, 'https://generativelanguage.googleapis.com/v1beta/models');
   assert.equal(geminiRequestConfig.params.key, 'gemini-test');
-  assert.deepStrictEqual(sortedUnique(modelIds(geminiResult)), ['models/gemini-2.5-flash-lite', 'models/gemini-2.5-pro']);
+  assertContainsAll(modelIds(geminiResult), [
+    'models/gemini-2.5-pro',
+    'models/gemini-2.5-flash-lite',
+    'models/gemini-embedding-001',
+    'models/gemini-live-2.0-flash',
+  ]);
   assert.deepStrictEqual(sortedUnique(recommendedIds(geminiResult)), ['models/gemini-2.5-flash-lite', 'models/gemini-2.5-pro']);
+  assert.ok(!recommendedIds(geminiResult).includes('models/gemini-embedding-001'));
+  assert.ok(!recommendedIds(geminiResult).includes('models/gemini-live-2.0-flash'));
 
   const anthropicFixture = [
     {
@@ -107,8 +132,14 @@ async function run() {
     },
   );
   assert.equal(anthropicResult.ok, true);
-  assert.deepStrictEqual(modelIds(anthropicResult), ['claude-opus-4-1-20250929']);
+  assertContainsAll(modelIds(anthropicResult), [
+    'claude-opus-4-1-20250929',
+    'claude-3-haiku-20240307',
+    'claude-instant-1.2',
+  ]);
   assert.deepStrictEqual(recommendedIds(anthropicResult), ['claude-opus-4-1-20250929']);
+  assert.ok(!recommendedIds(anthropicResult).includes('claude-3-haiku-20240307'));
+  assert.ok(!recommendedIds(anthropicResult).includes('claude-instant-1.2'));
 
   const anthropicFailure = await discoverModels(
     'anthropic',
@@ -148,7 +179,9 @@ async function run() {
   );
   assert.equal(deepseekResult.ok, true);
   assert.equal(openaiCompatibleUrl, 'https://api.deepseek.com/models');
-  assert.deepStrictEqual(sortedUnique(modelIds(deepseekResult)), ['deepseek-chat', 'deepseek-reasoner']);
+  assertContainsAll(modelIds(deepseekResult), ['deepseek-chat', 'deepseek-reasoner', 'deepseek-embedding']);
+  assert.deepStrictEqual(sortedUnique(recommendedIds(deepseekResult)), ['deepseek-chat', 'deepseek-reasoner']);
+  assert.ok(!recommendedIds(deepseekResult).includes('deepseek-embedding'));
 
   const qwenResult = await discoverModels(
     'qwen',
@@ -161,7 +194,9 @@ async function run() {
     },
   );
   assert.equal(qwenResult.ok, true);
-  assert.deepStrictEqual(sortedUnique(modelIds(qwenResult)), ['qwen-plus', 'qwen-turbo']);
+  assertContainsAll(modelIds(qwenResult), ['qwen-plus', 'qwen-turbo', 'qwen-tts']);
+  assert.deepStrictEqual(sortedUnique(recommendedIds(qwenResult)), ['qwen-plus', 'qwen-turbo']);
+  assert.ok(!recommendedIds(qwenResult).includes('qwen-tts'));
 
   const customMissingBaseUrl = await discoverModels(
     'openai_compatible_custom',

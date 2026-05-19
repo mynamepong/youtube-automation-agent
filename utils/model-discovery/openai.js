@@ -106,7 +106,7 @@ async function listOpenAIModels(providerConfig = {}, options = {}) {
       response = await client.models.list();
     }
 
-    const models = extractModels(response).filter(isSupportedOpenAIModel);
+    const models = extractModels(response);
 
     return {
       ok: true,

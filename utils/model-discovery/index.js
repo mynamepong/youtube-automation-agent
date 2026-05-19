@@ -256,15 +256,14 @@ async function discoverModels(providerId, providerConfig = {}, options = {}) {
     }
 
     const rawModels = Array.isArray(adapterResult.models) ? adapterResult.models : [];
-    const normalizedModels = rawModels
-      .map(model => normalizeModel(providerId, model, rawModels))
-      .filter(model => Boolean(model) && model.capabilities.text && !model.deprecated);
-
-    const allModels = sortModels(normalizedModels);
-    const stableModels = allModels.filter(model => model.capabilities.text && !model.deprecated);
-    const recommendedModels = stableModels.length > 0
-      ? stableModels
-      : allModels;
+    const allModels = sortModels(
+      rawModels
+        .map(model => normalizeModel(providerId, model, rawModels))
+        .filter(Boolean),
+    );
+    const recommendedModels = sortModels(
+      allModels.filter(model => model.capabilities.text && !model.deprecated),
+    );
 
     return {
       providerId,

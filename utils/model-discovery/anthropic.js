@@ -105,9 +105,7 @@ async function listAnthropicModels(providerConfig = {}, options = {}) {
       timeout: options.timeoutMs || 10000,
     });
 
-    const rawModels = extractModels(response);
-    const allowLegacy = !hasModernAnthropicModel(rawModels);
-    const models = rawModels.filter(model => isSupportedAnthropicModel(model, { allowLegacy }));
+    const models = extractModels(response);
 
     return {
       ok: true,

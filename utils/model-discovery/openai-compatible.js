@@ -105,7 +105,7 @@ async function listOpenAICompatibleModels(providerId, providerConfig = {}, optio
       timeout: options.timeoutMs || 10000,
     });
 
-    const models = extractModels(response).filter(isSupportedOpenAICompatibleModel);
+    const models = extractModels(response);
 
     return {
       ok: true,

@@ -2,6 +2,7 @@ const assert = require('assert/strict');
 const fs = require('fs').promises;
 const os = require('os');
 const path = require('path');
+const Module = require('module');
 const {
   getProvider,
   listProviderChoices,
@@ -9,10 +10,9 @@ const {
   isOpenAICompatibleProvider,
   getEnvKeyForProvider,
 } = require('./utils/llm-provider-registry');
-const Module = require('module');
 
 function createIdentityChalk() {
-  const identity = input => input;
+  const identity = value => value;
   identity.bold = identity;
   identity.dim = identity;
   identity.italic = identity;
@@ -50,6 +50,7 @@ function createWinstonStub() {
 
 function installDependencyStubs() {
   const originalLoad = Module._load;
+
   Module._load = function patchedLoad(request, parent, isMain) {
     if (request === 'chalk') {
       return createIdentityChalk();
@@ -142,7 +143,6 @@ async function createManager(baseDir, credentials) {
   manager.tokens = {};
   manager._credentialsLoaded = false;
   manager._tokensLoaded = false;
-
   return manager;
 }
 
@@ -161,10 +161,7 @@ function assertBaseRegistryMetadata() {
   }
 
   assert.equal(getProvider('deepseek').defaultBaseUrl, 'https://api.deepseek.com');
-  assert.equal(
-    getProvider('qwen').defaultBaseUrl,
-    'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
-  );
+  assert.equal(getProvider('qwen').defaultBaseUrl, 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1');
   assert.equal(getEnvKeyForProvider('anthropic'), 'ANTHROPIC_API_KEY');
   assert.equal(isOpenAICompatibleProvider('deepseek'), true);
   assert.equal(isOpenAICompatibleProvider('openai'), false);
@@ -176,6 +173,8 @@ function expectNormalizedConfig(config, expected) {
   assert.equal(config.primaryProvider, expected.primaryProvider);
   assert.equal(config.fallbackProvider, expected.fallbackProvider);
   assert.deepEqual(config.enabledProviders, expected.enabledProviders);
+  assert.deepEqual(config.selectedModels || {}, expected.selectedModels || {});
+
   for (const [providerId, providerExpectation] of Object.entries(expected.providers)) {
     const providerConfig = config.providers[providerId];
     assert.ok(providerConfig, `Missing provider config for ${providerId}`);
@@ -192,19 +191,36 @@ async function runCase(name, credentials, expected) {
   try {
     const manager = await createManager(baseDir, credentials);
     const valid = await manager.validateAll();
-    assert.equal(valid, true, `${name}: validateAll() should pass`);
+    assert.equal(valid, expected.valid, `${name}: validateAll() mismatch`);
 
     const aiConfig = await manager.getAIConfig();
     expectNormalizedConfig(aiConfig, expected);
-
-    const providerConfig = manager.getProviderConfig(expected.primaryProvider);
-    assert.equal(providerConfig.enabled, true, `${name}: provider should be enabled`);
-    assert.equal(providerConfig.apiKey, expected.providers[expected.primaryProvider].apiKey);
 
     await manager.saveCredentials();
     const persisted = JSON.parse(await fs.readFile(manager.credentialsPath, 'utf8'));
     assert.ok(persisted.ai, `${name}: normalized ai block should be persisted`);
     expectNormalizedConfig(persisted.ai, expected);
+  } finally {
+    await fs.rm(baseDir, { recursive: true, force: true });
+  }
+}
+
+async function runFreshProviderConfigCase() {
+  const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'yt-llm-provider-fresh-'));
+  try {
+    const manager = await createManager(baseDir, {
+      youtube: youtubeCredentials,
+      openai: {
+        apiKey: 'sk-openai-fresh',
+        model: 'MODEL_ID_SELECTED_DURING_SETUP',
+      },
+    });
+
+    const providerConfig = await manager.getProviderConfig('openai');
+    assert.equal(providerConfig.enabled, true);
+    assert.equal(providerConfig.apiKey, 'sk-openai-fresh');
+    assert.equal(providerConfig.model, 'MODEL_ID_SELECTED_DURING_SETUP');
+    assert.equal(providerConfig.baseUrl, null);
   } finally {
     await fs.rm(baseDir, { recursive: true, force: true });
   }
@@ -219,19 +235,23 @@ async function main() {
       youtube: youtubeCredentials,
       openai: {
         apiKey: 'sk-openai-legacy',
-        model: 'gpt-4.1',
+        model: 'MODEL_ID_SELECTED_DURING_SETUP',
       },
     },
     {
+      valid: true,
       mode: 'single',
       primaryProvider: 'openai',
       fallbackProvider: null,
       enabledProviders: ['openai'],
+      selectedModels: {
+        openai: 'MODEL_ID_SELECTED_DURING_SETUP',
+      },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai-legacy',
-          model: 'gpt-4.1',
+          model: 'MODEL_ID_SELECTED_DURING_SETUP',
           baseUrl: null,
         },
       },
@@ -247,10 +267,12 @@ async function main() {
       },
     },
     {
+      valid: true,
       mode: 'single',
       primaryProvider: 'gemini',
       fallbackProvider: null,
       enabledProviders: ['gemini'],
+      selectedModels: {},
       providers: {
         gemini: {
           enabled: true,
@@ -268,22 +290,26 @@ async function main() {
       youtube: youtubeCredentials,
       openai: {
         apiKey: 'sk-openai-legacy',
-        model: 'gpt-4.1',
+        model: 'MODEL_ID_SELECTED_DURING_SETUP',
       },
       gemini: {
         apiKey: 'gemini-legacy',
       },
     },
     {
+      valid: true,
       mode: 'fallback',
       primaryProvider: 'openai',
       fallbackProvider: 'gemini',
       enabledProviders: ['openai', 'gemini'],
+      selectedModels: {
+        openai: 'MODEL_ID_SELECTED_DURING_SETUP',
+      },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai-legacy',
-          model: 'gpt-4.1',
+          model: 'MODEL_ID_SELECTED_DURING_SETUP',
           baseUrl: null,
         },
         gemini: {
@@ -297,7 +323,7 @@ async function main() {
   );
 
   await runCase(
-    'new-anthropic-single',
+    'explicit-selected-model-backfill',
     {
       youtube: youtubeCredentials,
       ai: {
@@ -312,16 +338,20 @@ async function main() {
           anthropic: {
             enabled: true,
             apiKey: 'anthropic-key',
-            model: 'claude-sonnet-4-20250514',
+            model: null,
           },
         },
       },
     },
     {
+      valid: true,
       mode: 'single',
       primaryProvider: 'anthropic',
       fallbackProvider: null,
       enabledProviders: ['anthropic'],
+      selectedModels: {
+        anthropic: 'claude-sonnet-4-20250514',
+      },
       providers: {
         anthropic: {
           enabled: true,
@@ -334,44 +364,74 @@ async function main() {
   );
 
   await runCase(
-    'new-deepseek-config',
+    'multi-provider-remains-multi',
     {
       youtube: youtubeCredentials,
       ai: {
-        mode: 'single',
-        primaryProvider: 'deepseek',
-        fallbackProvider: null,
-        enabledProviders: ['deepseek'],
+        mode: 'multi',
+        primaryProvider: 'openai',
+        fallbackProvider: 'gemini',
+        enabledProviders: ['openai', 'gemini', 'anthropic'],
         selectedModels: {
-          deepseek: 'deepseek-v4-pro',
+          openai: 'MODEL_ID_SELECTED_DURING_SETUP',
+          gemini: 'gemini-model',
+          anthropic: 'claude-sonnet-4-20250514',
         },
         providers: {
-          deepseek: {
+          openai: {
             enabled: true,
-            apiKey: 'deepseek-key',
-            model: 'deepseek-v4-pro',
+            apiKey: 'sk-openai',
+            model: null,
+          },
+          gemini: {
+            enabled: true,
+            apiKey: 'gemini-key',
+            model: null,
+          },
+          anthropic: {
+            enabled: true,
+            apiKey: 'anthropic-key',
+            model: null,
           },
         },
       },
     },
     {
-      mode: 'single',
-      primaryProvider: 'deepseek',
-      fallbackProvider: null,
-      enabledProviders: ['deepseek'],
+      valid: true,
+      mode: 'multi',
+      primaryProvider: 'openai',
+      fallbackProvider: 'gemini',
+      enabledProviders: ['openai', 'gemini', 'anthropic'],
+      selectedModels: {
+        openai: 'MODEL_ID_SELECTED_DURING_SETUP',
+        gemini: 'gemini-model',
+        anthropic: 'claude-sonnet-4-20250514',
+      },
       providers: {
-        deepseek: {
+        openai: {
           enabled: true,
-          apiKey: 'deepseek-key',
-          model: 'deepseek-v4-pro',
-          baseUrl: 'https://api.deepseek.com',
+          apiKey: 'sk-openai',
+          model: 'MODEL_ID_SELECTED_DURING_SETUP',
+          baseUrl: null,
+        },
+        gemini: {
+          enabled: true,
+          apiKey: 'gemini-key',
+          model: 'gemini-model',
+          baseUrl: null,
+        },
+        anthropic: {
+          enabled: true,
+          apiKey: 'anthropic-key',
+          model: 'claude-sonnet-4-20250514',
+          baseUrl: null,
         },
       },
     },
   );
 
   await runCase(
-    'new-custom-openai-compatible',
+    'custom-openai-compatible-needs-base-url',
     {
       youtube: youtubeCredentials,
       ai: {
@@ -387,26 +447,114 @@ async function main() {
             enabled: true,
             apiKey: 'custom-key',
             model: 'custom-model',
-            baseUrl: 'https://proxy.example.com/v1',
           },
         },
       },
     },
     {
+      valid: false,
       mode: 'single',
       primaryProvider: 'openai_compatible_custom',
       fallbackProvider: null,
       enabledProviders: ['openai_compatible_custom'],
+      selectedModels: {
+        openai_compatible_custom: 'custom-model',
+      },
       providers: {
         openai_compatible_custom: {
           enabled: true,
           apiKey: 'custom-key',
           model: 'custom-model',
-          baseUrl: 'https://proxy.example.com/v1',
+          baseUrl: null,
         },
       },
     },
   );
+
+  await runCase(
+    'selected-gemini-needs-api-key',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'single',
+        primaryProvider: 'gemini',
+        fallbackProvider: null,
+        enabledProviders: ['gemini'],
+        selectedModels: {},
+        providers: {
+          gemini: {
+            enabled: true,
+            apiKey: '',
+            model: null,
+          },
+        },
+      },
+    },
+    {
+      valid: false,
+      mode: 'single',
+      primaryProvider: 'gemini',
+      fallbackProvider: null,
+      enabledProviders: ['gemini'],
+      selectedModels: {},
+      providers: {
+        gemini: {
+          enabled: true,
+          apiKey: '',
+          model: null,
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runCase(
+    'unsupported-provider-is-removed',
+    {
+      youtube: youtubeCredentials,
+      ai: {
+        mode: 'multi',
+        primaryProvider: 'openai',
+        fallbackProvider: 'gemini',
+        enabledProviders: ['openai', 'made_up_provider'],
+        selectedModels: {
+          openai: 'MODEL_ID_SELECTED_DURING_SETUP',
+        },
+        providers: {
+          openai: {
+            enabled: true,
+            apiKey: 'sk-openai',
+            model: null,
+          },
+          made_up_provider: {
+            enabled: true,
+            apiKey: 'nope',
+            model: 'fake-model',
+          },
+        },
+      },
+    },
+    {
+      valid: true,
+      mode: 'multi',
+      primaryProvider: 'openai',
+      fallbackProvider: null,
+      enabledProviders: ['openai'],
+      selectedModels: {
+        openai: 'MODEL_ID_SELECTED_DURING_SETUP',
+      },
+      providers: {
+        openai: {
+          enabled: true,
+          apiKey: 'sk-openai',
+          model: 'MODEL_ID_SELECTED_DURING_SETUP',
+          baseUrl: null,
+        },
+      },
+    },
+  );
+
+  await runFreshProviderConfigCase();
 
   console.log('AI provider registry and normalization checks passed.');
 }

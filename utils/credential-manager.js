@@ -70,112 +70,162 @@ class CredentialManager {
 
   normalizeAIConfig() {
     const supportedProviders = listProviders();
-    const legacyProviders = {
-      openai: this.credentials.openai || null,
-      gemini: this.credentials.gemini || null,
-    };
     const aiConfig = this.credentials.ai && typeof this.credentials.ai === 'object'
       ? this.credentials.ai
       : null;
+    const explicitProviders = aiConfig?.providers && typeof aiConfig.providers === 'object'
+      ? aiConfig.providers
+      : {};
+    const explicitSelectedModels = aiConfig?.selectedModels && typeof aiConfig.selectedModels === 'object'
+      ? aiConfig.selectedModels
+      : {};
+    const explicitEnabledProviders = Array.isArray(aiConfig?.enabledProviders)
+      ? aiConfig.enabledProviders.filter(providerId => isSupportedProvider(providerId))
+      : [];
+    const explicitMode = typeof aiConfig?.mode === 'string' && ['single', 'fallback', 'multi'].includes(aiConfig.mode)
+      ? aiConfig.mode
+      : null;
+    const hasLegacyAI = Boolean(this.credentials.openai || this.credentials.gemini);
+    const useLegacyInference = !aiConfig && hasLegacyAI;
 
     const normalizedProviders = {};
-    const enabledProviders = [];
-    const selectedModels = {};
+    const normalizedSelectedModels = {};
 
-    const normalizeProviderEntry = (providerId, source = {}, enabled = false) => {
+    const getString = value => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
+    const resolveLegacyProvider = providerId => {
+      if (providerId === 'openai') {
+        return this.credentials.openai && typeof this.credentials.openai === 'object' ? this.credentials.openai : null;
+      }
+
+      if (providerId === 'gemini') {
+        return this.credentials.gemini && typeof this.credentials.gemini === 'object' ? this.credentials.gemini : null;
+      }
+
+      return null;
+    };
+
+    const resolveModel = (providerId, providerEntry, legacyEntry) => {
+      return getString(providerEntry?.model)
+        || getString(explicitSelectedModels[providerId])
+        || getString(legacyEntry?.model)
+        || null;
+    };
+
+    const resolveBaseUrl = (providerId, providerEntry, legacyEntry) => {
       const providerMeta = getProvider(providerId);
-      const apiKey = typeof source.apiKey === 'string' ? source.apiKey : '';
-      const model = typeof source.model === 'string' && source.model.trim() !== ''
-        ? source.model
-        : null;
-      const baseUrl = typeof source.baseUrl === 'string' && source.baseUrl.trim() !== ''
-        ? source.baseUrl
-        : providerMeta?.defaultBaseUrl || null;
+      return getString(providerEntry?.baseUrl)
+        || getString(legacyEntry?.baseUrl)
+        || providerMeta?.defaultBaseUrl
+        || null;
+    };
 
-      return {
+    const resolveEnabled = (providerId, providerEntry, legacyEntry) => {
+      if (providerEntry && providerEntry.enabled === false) {
+        return false;
+      }
+
+      if (providerEntry && providerEntry.enabled === true) {
+        return true;
+      }
+
+      const inEnabledList = explicitEnabledProviders.includes(providerId);
+      if (inEnabledList) {
+        return true;
+      }
+
+      if (useLegacyInference && legacyEntry) {
+        return true;
+      }
+
+      return false;
+    };
+
+    for (const provider of supportedProviders) {
+      const providerId = provider.id;
+      const providerEntry = explicitProviders[providerId] && typeof explicitProviders[providerId] === 'object'
+        ? explicitProviders[providerId]
+        : null;
+      const legacyEntry = resolveLegacyProvider(providerId);
+      const model = resolveModel(providerId, providerEntry, legacyEntry);
+      const enabled = resolveEnabled(providerId, providerEntry, legacyEntry);
+      const baseUrl = resolveBaseUrl(providerId, providerEntry, legacyEntry);
+      const apiKey = getString(providerEntry?.apiKey)
+        || getString(legacyEntry?.apiKey)
+        || '';
+
+      const shouldMaterializeProvider = Boolean(
+        providerEntry
+        || enabled
+        || explicitEnabledProviders.includes(providerId)
+        || (useLegacyInference && legacyEntry),
+      );
+
+      if (!shouldMaterializeProvider) {
+        continue;
+      }
+
+      normalizedProviders[providerId] = {
         enabled,
         apiKey,
         model,
         ...(baseUrl ? { baseUrl } : {}),
       };
-    };
 
-    for (const provider of supportedProviders) {
-      const providerId = provider.id;
-      const aiProviderEntry = aiConfig?.providers?.[providerId];
-      const legacyProviderEntry = providerId === 'openai' || providerId === 'gemini'
-        ? legacyProviders[providerId]
-        : null;
-
-      if (!aiProviderEntry && !legacyProviderEntry) {
-        continue;
-      }
-
-      if (aiProviderEntry) {
-        const mergedSource = {
-          ...(legacyProviderEntry || {}),
-          ...aiProviderEntry,
-        };
-        normalizedProviders[providerId] = normalizeProviderEntry(
-          providerId,
-          mergedSource,
-          Boolean(aiProviderEntry.enabled),
-        );
-      } else if (legacyProviderEntry) {
-        normalizedProviders[providerId] = normalizeProviderEntry(
-          providerId,
-          legacyProviderEntry,
-          true,
-        );
-      }
-
-      if (normalizedProviders[providerId]?.enabled) {
-        enabledProviders.push(providerId);
-        if (normalizedProviders[providerId].model) {
-          selectedModels[providerId] = normalizedProviders[providerId].model;
-        }
+      if (enabled && model) {
+        normalizedSelectedModels[providerId] = model;
       }
     }
 
-    if (enabledProviders.length === 0) {
-      if (!aiConfig && Object.keys(normalizedProviders).length === 0) {
-        return null;
-      }
+    const enabledProviders = supportedProviders
+      .map(provider => provider.id)
+      .filter(providerId => normalizedProviders[providerId] && normalizedProviders[providerId].enabled);
 
-      this.credentials.ai = {
-        mode: aiConfig?.mode || 'single',
-        primaryProvider: aiConfig?.primaryProvider && isSupportedProvider(aiConfig.primaryProvider)
-          ? aiConfig.primaryProvider
-          : supportedProviders[0]?.id || 'openai',
-        fallbackProvider: null,
-        enabledProviders,
-        selectedModels,
-        providers: normalizedProviders,
-      };
-
-      return this.credentials.ai;
+    const aiConfigExists = Boolean(aiConfig);
+    if (!aiConfigExists && !hasLegacyAI && enabledProviders.length === 0) {
+      return null;
     }
 
-    const inferredPrimary = (
-      aiConfig?.primaryProvider && isSupportedProvider(aiConfig.primaryProvider) && enabledProviders.includes(aiConfig.primaryProvider)
-        ? aiConfig.primaryProvider
-        : enabledProviders[0]
-    );
-    const inferredFallback = enabledProviders.length === 2
-      ? enabledProviders.find(providerId => providerId !== inferredPrimary) || null
-      : null;
+    const preservedMode = explicitMode;
     const inferredMode = enabledProviders.length <= 1
       ? 'single'
       : enabledProviders.length === 2
         ? 'fallback'
         : 'multi';
+    const mode = preservedMode || (useLegacyInference && enabledProviders.length === 2 ? 'fallback' : inferredMode);
+
+    let primaryProvider = null;
+    if (
+      aiConfigExists
+      && isSupportedProvider(aiConfig.primaryProvider)
+      && normalizedProviders[aiConfig.primaryProvider]?.enabled
+    ) {
+      primaryProvider = aiConfig.primaryProvider;
+    } else if (useLegacyInference && normalizedProviders.openai?.enabled) {
+      primaryProvider = 'openai';
+    } else {
+      primaryProvider = enabledProviders[0] || null;
+    }
+
+    let fallbackProvider = null;
+    if (
+      aiConfigExists
+      && isSupportedProvider(aiConfig.fallbackProvider)
+      && normalizedProviders[aiConfig.fallbackProvider]?.enabled
+      && aiConfig.fallbackProvider !== primaryProvider
+    ) {
+      fallbackProvider = aiConfig.fallbackProvider;
+    } else if (useLegacyInference && normalizedProviders.gemini?.enabled && primaryProvider === 'openai') {
+      fallbackProvider = 'gemini';
+    } else if (mode === 'fallback' && enabledProviders.length === 2) {
+      fallbackProvider = enabledProviders.find(providerId => providerId !== primaryProvider) || null;
+    }
 
     this.credentials.ai = {
-      mode: inferredMode,
-      primaryProvider: inferredPrimary,
-      fallbackProvider: inferredFallback,
+      mode,
+      primaryProvider,
+      fallbackProvider,
       enabledProviders,
-      selectedModels,
+      selectedModels: normalizedSelectedModels,
       providers: normalizedProviders,
     };
 
@@ -190,7 +240,20 @@ class CredentialManager {
     return this.normalizeAIConfig();
   }
 
-  getProviderConfig(providerId) {
+  _getProviderConfigSync(providerId) {
+    const aiConfig = this.normalizeAIConfig();
+    const providerConfig = aiConfig?.providers?.[providerId];
+
+    if (providerConfig) {
+      return {
+        providerId,
+        apiKey: providerConfig.apiKey || '',
+        model: providerConfig.model || null,
+        baseUrl: providerConfig.baseUrl || null,
+        enabled: Boolean(providerConfig.enabled),
+      };
+    }
+
     const providerMeta = getProvider(providerId);
     if (!providerMeta) {
       return {
@@ -202,39 +265,21 @@ class CredentialManager {
       };
     }
 
-    const aiConfig = this.normalizeAIConfig();
-    const aiProvider = aiConfig?.providers?.[providerId];
-
-    if (aiProvider) {
-      return {
-        providerId,
-        apiKey: aiProvider.apiKey || '',
-        model: aiProvider.model || null,
-        baseUrl: aiProvider.baseUrl || null,
-        enabled: Boolean(aiProvider.enabled),
-      };
-    }
-
-    if (!aiConfig) {
-      const legacyProvider = this.credentials[providerId];
-      if (legacyProvider) {
-        return {
-          providerId,
-          apiKey: legacyProvider.apiKey || '',
-          model: legacyProvider.model || null,
-          baseUrl: legacyProvider.baseUrl || null,
-          enabled: true,
-        };
-      }
-    }
-
     return {
       providerId,
       apiKey: '',
       model: null,
-      baseUrl: null,
+      baseUrl: providerMeta.defaultBaseUrl || null,
       enabled: false,
     };
+  }
+
+  async getProviderConfig(providerId) {
+    if (!this._credentialsLoaded) {
+      await this.loadCredentials();
+    }
+
+    return this._getProviderConfigSync(providerId);
   }
 
   // YouTube API Authentication
@@ -580,7 +625,7 @@ class CredentialManager {
 
     for (const providerId of aiConfig.enabledProviders) {
       const providerMeta = getProvider(providerId);
-      const providerConfig = aiConfig.providers[providerId] || this.getProviderConfig(providerId);
+      const providerConfig = await this.getProviderConfig(providerId);
 
       if (!providerConfig.apiKey) {
         const providerName = providerMeta?.displayName || providerId;

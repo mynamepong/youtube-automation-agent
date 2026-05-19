@@ -4,6 +4,11 @@ const { google } = require('googleapis');
 const inquirer = require('inquirer');
 const chalk = require('chalk');
 const { Logger } = require('./logger');
+const {
+  getProvider,
+  listProviders,
+  isSupportedProvider,
+} = require('./llm-provider-registry');
 
 class CredentialManager {
   constructor() {
@@ -12,6 +17,8 @@ class CredentialManager {
     this.tokensPath = path.join(__dirname, '..', 'config', 'tokens.json');
     this.credentials = {};
     this.tokens = {};
+    this._credentialsLoaded = false;
+    this._tokensLoaded = false;
   }
 
   async initialize() {
@@ -32,6 +39,9 @@ class CredentialManager {
     } catch (error) {
       this.credentials = {};
     }
+
+    this._credentialsLoaded = true;
+    this.normalizeAIConfig();
   }
 
   async loadTokens() {
@@ -41,16 +51,190 @@ class CredentialManager {
     } catch (error) {
       this.tokens = {};
     }
+
+    this._tokensLoaded = true;
   }
 
   async saveCredentials() {
     await fs.mkdir(path.dirname(this.credentialsPath), { recursive: true });
+    this.normalizeAIConfig();
     await fs.writeFile(this.credentialsPath, JSON.stringify(this.credentials, null, 2));
+    this._credentialsLoaded = true;
   }
 
   async saveTokens() {
     await fs.mkdir(path.dirname(this.tokensPath), { recursive: true });
     await fs.writeFile(this.tokensPath, JSON.stringify(this.tokens, null, 2));
+    this._tokensLoaded = true;
+  }
+
+  normalizeAIConfig() {
+    const supportedProviders = listProviders();
+    const legacyProviders = {
+      openai: this.credentials.openai || null,
+      gemini: this.credentials.gemini || null,
+    };
+    const aiConfig = this.credentials.ai && typeof this.credentials.ai === 'object'
+      ? this.credentials.ai
+      : null;
+
+    const normalizedProviders = {};
+    const enabledProviders = [];
+    const selectedModels = {};
+
+    const normalizeProviderEntry = (providerId, source = {}, enabled = false) => {
+      const providerMeta = getProvider(providerId);
+      const apiKey = typeof source.apiKey === 'string' ? source.apiKey : '';
+      const model = typeof source.model === 'string' && source.model.trim() !== ''
+        ? source.model
+        : null;
+      const baseUrl = typeof source.baseUrl === 'string' && source.baseUrl.trim() !== ''
+        ? source.baseUrl
+        : providerMeta?.defaultBaseUrl || null;
+
+      return {
+        enabled,
+        apiKey,
+        model,
+        ...(baseUrl ? { baseUrl } : {}),
+      };
+    };
+
+    for (const provider of supportedProviders) {
+      const providerId = provider.id;
+      const aiProviderEntry = aiConfig?.providers?.[providerId];
+      const legacyProviderEntry = providerId === 'openai' || providerId === 'gemini'
+        ? legacyProviders[providerId]
+        : null;
+
+      if (!aiProviderEntry && !legacyProviderEntry) {
+        continue;
+      }
+
+      if (aiProviderEntry) {
+        const mergedSource = {
+          ...(legacyProviderEntry || {}),
+          ...aiProviderEntry,
+        };
+        normalizedProviders[providerId] = normalizeProviderEntry(
+          providerId,
+          mergedSource,
+          Boolean(aiProviderEntry.enabled),
+        );
+      } else if (legacyProviderEntry) {
+        normalizedProviders[providerId] = normalizeProviderEntry(
+          providerId,
+          legacyProviderEntry,
+          true,
+        );
+      }
+
+      if (normalizedProviders[providerId]?.enabled) {
+        enabledProviders.push(providerId);
+        if (normalizedProviders[providerId].model) {
+          selectedModels[providerId] = normalizedProviders[providerId].model;
+        }
+      }
+    }
+
+    if (enabledProviders.length === 0) {
+      if (!aiConfig && Object.keys(normalizedProviders).length === 0) {
+        return null;
+      }
+
+      this.credentials.ai = {
+        mode: aiConfig?.mode || 'single',
+        primaryProvider: aiConfig?.primaryProvider && isSupportedProvider(aiConfig.primaryProvider)
+          ? aiConfig.primaryProvider
+          : supportedProviders[0]?.id || 'openai',
+        fallbackProvider: null,
+        enabledProviders,
+        selectedModels,
+        providers: normalizedProviders,
+      };
+
+      return this.credentials.ai;
+    }
+
+    const inferredPrimary = (
+      aiConfig?.primaryProvider && isSupportedProvider(aiConfig.primaryProvider) && enabledProviders.includes(aiConfig.primaryProvider)
+        ? aiConfig.primaryProvider
+        : enabledProviders[0]
+    );
+    const inferredFallback = enabledProviders.length === 2
+      ? enabledProviders.find(providerId => providerId !== inferredPrimary) || null
+      : null;
+    const inferredMode = enabledProviders.length <= 1
+      ? 'single'
+      : enabledProviders.length === 2
+        ? 'fallback'
+        : 'multi';
+
+    this.credentials.ai = {
+      mode: inferredMode,
+      primaryProvider: inferredPrimary,
+      fallbackProvider: inferredFallback,
+      enabledProviders,
+      selectedModels,
+      providers: normalizedProviders,
+    };
+
+    return this.credentials.ai;
+  }
+
+  async getAIConfig() {
+    if (!this._credentialsLoaded) {
+      await this.loadCredentials();
+    }
+
+    return this.normalizeAIConfig();
+  }
+
+  getProviderConfig(providerId) {
+    const providerMeta = getProvider(providerId);
+    if (!providerMeta) {
+      return {
+        providerId,
+        apiKey: '',
+        model: null,
+        baseUrl: null,
+        enabled: false,
+      };
+    }
+
+    const aiConfig = this.normalizeAIConfig();
+    const aiProvider = aiConfig?.providers?.[providerId];
+
+    if (aiProvider) {
+      return {
+        providerId,
+        apiKey: aiProvider.apiKey || '',
+        model: aiProvider.model || null,
+        baseUrl: aiProvider.baseUrl || null,
+        enabled: Boolean(aiProvider.enabled),
+      };
+    }
+
+    if (!aiConfig) {
+      const legacyProvider = this.credentials[providerId];
+      if (legacyProvider) {
+        return {
+          providerId,
+          apiKey: legacyProvider.apiKey || '',
+          model: legacyProvider.model || null,
+          baseUrl: legacyProvider.baseUrl || null,
+          enabled: true,
+        };
+      }
+    }
+
+    return {
+      providerId,
+      apiKey: '',
+      model: null,
+      baseUrl: null,
+      enabled: false,
+    };
   }
 
   // YouTube API Authentication
@@ -378,24 +562,37 @@ class CredentialManager {
       // Files might not exist yet
     }
 
-    const requiredCredentials = ['youtube', 'openai'];
-    const missing = [];
-
-    for (const service of requiredCredentials) {
-      if (!this.credentials[service]) {
-        missing.push(service);
-      }
-    }
-
-    if (missing.length > 0) {
-      console.log(chalk.yellow(`\n⚠️  Missing credentials for: ${missing.join(', ')}`));
+    if (!this.credentials.youtube) {
+      console.log(chalk.yellow('\n⚠️  Missing credentials for: youtube'));
       return false;
     }
 
-    // Validate YouTube tokens
     if (!this.tokens.youtube) {
       console.log(chalk.yellow('\n⚠️  YouTube authentication required'));
       return false;
+    }
+
+    const aiConfig = await this.getAIConfig();
+    if (!aiConfig || !Array.isArray(aiConfig.enabledProviders) || aiConfig.enabledProviders.length === 0) {
+      console.log(chalk.yellow('\n⚠️  No AI provider configured'));
+      return false;
+    }
+
+    for (const providerId of aiConfig.enabledProviders) {
+      const providerMeta = getProvider(providerId);
+      const providerConfig = aiConfig.providers[providerId] || this.getProviderConfig(providerId);
+
+      if (!providerConfig.apiKey) {
+        const providerName = providerMeta?.displayName || providerId;
+        console.log(chalk.yellow(`\n⚠️  ${providerName} API key is missing for selected provider: ${providerId}`));
+        return false;
+      }
+
+      if (providerMeta?.requiresBaseUrl && !providerConfig.baseUrl) {
+        const providerName = providerMeta?.displayName || providerId;
+        console.log(chalk.yellow(`\n⚠️  ${providerName} base URL is missing for selected provider: ${providerId}`));
+        return false;
+      }
     }
 
     return true;

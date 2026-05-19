@@ -36,6 +36,8 @@ This system runs 24/7 to:
    - Local models via Ollama
    - Any OpenAI-compatible API
 
+The credential schema also supports Anthropic Claude, DeepSeek, Qwen / Alibaba Model Studio, and custom OpenAI-compatible APIs through the normalized `credentials.ai` block.
+
 ### 📊 What Each Agent Does
 
 ```javascript
@@ -88,9 +90,10 @@ This system runs 24/7 to:
 ### Prerequisites
 - Node.js 18+ ([Download here](https://nodejs.org/))
 - Google Account (for YouTube API)
-- AI Provider Account (choose one):
+- AI Provider Account (choose one or more):
   - OpenAI account ([Sign up](https://platform.openai.com/signup)) OR
   - Google AI Studio account ([Sign up - FREE](https://makersuite.google.com/))
+  - Anthropic / DeepSeek / Qwen / custom OpenAI-compatible credentials if you plan to use those providers
 - 10 minutes for initial setup
 
 ### Installation
@@ -114,7 +117,7 @@ This system runs 24/7 to:
    
    The setup wizard will help you:
    - Get YouTube API credentials (step-by-step guide included)
-   - Choose and configure AI provider
+   - Choose and configure AI providers
    - Set your channel preferences
    - Configure automation schedule
 
@@ -177,10 +180,14 @@ NODE_ENV=production
 PORT=3456
 LOG_LEVEL=info
 
-# AI Provider (choose one)
+# AI Provider Keys (add only what you need)
 OPENAI_API_KEY=your-key-here
-# OR
 GEMINI_API_KEY=your-key-here
+ANTHROPIC_API_KEY=your-key-here
+DEEPSEEK_API_KEY=your-key-here
+QWEN_API_KEY=your-key-here
+CUSTOM_LLM_API_KEY=your-key-here
+CUSTOM_LLM_BASE_URL=https://your-openai-compatible-endpoint/v1
 
 # YouTube Settings
 YOUTUBE_REGION=US

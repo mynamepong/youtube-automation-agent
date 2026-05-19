@@ -429,63 +429,6 @@ class CredentialManager {
     return google.youtube({ version: 'v3', auth });
   }
 
-  // OpenAI API Setup
-  async setupOpenAICredentials() {
-    console.log(chalk.cyan('\n🤖 OpenAI API Setup'));
-    console.log(chalk.gray('Get your API key from: https://platform.openai.com/api-keys'));
-    
-    const answers = await inquirer.prompt([
-      {
-        type: 'password',
-        name: 'apiKey',
-        message: 'Enter your OpenAI API Key:',
-        validate: input => input.startsWith('sk-') || 'Invalid OpenAI API key format'
-      },
-      {
-        type: 'list',
-        name: 'model',
-        message: 'Select your preferred model:',
-        choices: [
-          'gpt-4-turbo-preview',
-          'gpt-4',
-          'gpt-3.5-turbo',
-          'gpt-3.5-turbo-16k'
-        ],
-        default: 'gpt-4-turbo-preview'
-      }
-    ]);
-
-    this.credentials.openai = {
-      apiKey: answers.apiKey,
-      model: answers.model
-    };
-
-    await this.saveCredentials();
-    console.log(chalk.green('✅ OpenAI credentials configured successfully!'));
-  }
-
-  // Google Gemini API Setup
-  async setupGeminiCredentials() {
-    console.log(chalk.cyan('\n💎 Google Gemini API Setup'));
-    console.log(chalk.gray('Get your API key from: https://makersuite.google.com/app/apikey'));
-    
-    const answers = await inquirer.prompt([
-      {
-        type: 'password',
-        name: 'apiKey',
-        message: 'Enter your Gemini API Key:',
-        validate: input => input.length > 0 || 'API key is required'
-      }
-    ]);
-
-    this.credentials.gemini = {
-      apiKey: answers.apiKey
-    };
-
-    await this.saveCredentials();
-    console.log(chalk.green('✅ Gemini credentials configured successfully!'));
-  }
-
   async promptProviderApiKey(providerMeta) {
     const answer = await inquirer.prompt([
       {

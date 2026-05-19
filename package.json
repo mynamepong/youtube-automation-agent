@@ -11,6 +11,7 @@
     "discover:models": "node discover-models.js",
     "validate:ai-config": "node validate-ai-provider-schema.js",
     "validate:model-discovery": "node validate-model-discovery.js",
+    "test:model-discovery": "node test-model-discovery.js",
     "validate:credentials": "node validate-credentials.js",
     "agent:strategy": "node agents/content-strategy-agent.js",
     "agent:script": "node agents/script-writer-agent.js",

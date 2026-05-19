@@ -1,6 +1,14 @@
 const assert = require('assert');
 
-const { discoverModels } = require('./utils/model-discovery');
+const {
+  discoverModels,
+} = require('./utils/model-discovery');
+const {
+  classifyModel,
+  filterUsableModels,
+  sortRecommendedModels,
+  groupModelsByTier,
+} = require('./utils/model-discovery/tiering');
 
 function modelIds(result) {
   return result.allModels.map(model => model.id);
@@ -28,7 +36,7 @@ function makeOpenAIClient(models) {
   };
 }
 
-async function run() {
+async function runValidation() {
   const openaiFixture = [
     { id: 'gpt-5.5', object: 'model' },
     { id: 'gpt-5.4-mini', object: 'model' },
@@ -45,6 +53,7 @@ async function run() {
     { client: makeOpenAIClient(openaiFixture) },
   );
   assert.equal(openaiResult.ok, true);
+  assert.equal(openaiResult.source, 'live');
   assertContainsAll(modelIds(openaiResult), [
     'gpt-5.5',
     'gpt-5.4-mini',
@@ -59,6 +68,23 @@ async function run() {
   assert.ok(!recommendedIds(openaiResult).includes('gpt-4-turbo-preview'));
   assert.ok(!recommendedIds(openaiResult).includes('text-embedding-3-small'));
   assert.ok(!recommendedIds(openaiResult).includes('gpt-image-1'));
+
+  const fallbackOpenAIResult = await discoverModels(
+    'openai',
+    { apiKey: 'sk-test' },
+    {
+      client: makeOpenAIClient([
+        { id: 'text-embedding-3-small', object: 'model' },
+        { id: 'gpt-3.5-turbo', object: 'model' },
+      ]),
+    },
+  );
+  assert.equal(fallbackOpenAIResult.ok, true);
+  assert.equal(fallbackOpenAIResult.source, 'fallback');
+  assert.ok(fallbackOpenAIResult.warning.includes('verified fallback model list'));
+  assertContainsAll(modelIds(fallbackOpenAIResult), ['text-embedding-3-small', 'gpt-3.5-turbo']);
+  assert.ok(fallbackOpenAIResult.recommendedModels.length > 0);
+  assert.equal(fallbackOpenAIResult.recommendedModels[0].source, 'fallback');
 
   const geminiFixture = [
     {
@@ -97,6 +123,7 @@ async function run() {
     },
   );
   assert.equal(geminiResult.ok, true);
+  assert.equal(geminiResult.source, 'live');
   assert.equal(geminiRequestUrl, 'https://generativelanguage.googleapis.com/v1beta/models');
   assert.equal(geminiRequestConfig.params.key, 'gemini-test');
   assertContainsAll(modelIds(geminiResult), [
@@ -110,18 +137,10 @@ async function run() {
   assert.ok(!recommendedIds(geminiResult).includes('models/gemini-live-2.0-flash'));
 
   const anthropicFixture = [
-    {
-      id: 'claude-opus-4-1-20250929',
-      display_name: 'Claude Opus 4.1',
-    },
-    {
-      id: 'claude-3-haiku-20240307',
-      display_name: 'Claude 3 Haiku',
-    },
-    {
-      id: 'claude-instant-1.2',
-      display_name: 'Claude Instant',
-    },
+    { id: 'claude-opus-4-1-20250805', display_name: 'Claude Opus 4.1' },
+    { id: 'claude-sonnet-4-20250514', display_name: 'Claude Sonnet 4' },
+    { id: 'claude-3-5-haiku-20241022', display_name: 'Claude Haiku 3.5' },
+    { id: 'claude-instant-1.2', display_name: 'Claude Instant' },
   ];
 
   const anthropicResult = await discoverModels(
@@ -132,13 +151,18 @@ async function run() {
     },
   );
   assert.equal(anthropicResult.ok, true);
+  assert.equal(anthropicResult.source, 'live');
   assertContainsAll(modelIds(anthropicResult), [
-    'claude-opus-4-1-20250929',
-    'claude-3-haiku-20240307',
+    'claude-opus-4-1-20250805',
+    'claude-sonnet-4-20250514',
+    'claude-3-5-haiku-20241022',
     'claude-instant-1.2',
   ]);
-  assert.deepStrictEqual(recommendedIds(anthropicResult), ['claude-opus-4-1-20250929']);
-  assert.ok(!recommendedIds(anthropicResult).includes('claude-3-haiku-20240307'));
+  assert.deepStrictEqual(recommendedIds(anthropicResult), [
+    'claude-opus-4-1-20250805',
+    'claude-sonnet-4-20250514',
+    'claude-3-5-haiku-20241022',
+  ]);
   assert.ok(!recommendedIds(anthropicResult).includes('claude-instant-1.2'));
 
   const anthropicFailure = await discoverModels(
@@ -150,20 +174,14 @@ async function run() {
       },
     },
   );
-  assert.equal(anthropicFailure.ok, false);
+  assert.equal(anthropicFailure.ok, true);
   assert.equal(anthropicFailure.source, 'fallback');
-  assert.match(anthropicFailure.warning, /Live model discovery failed:/);
+  assert.match(anthropicFailure.warning, /verified fallback model list/);
 
   const deepseekFixture = [
-    { id: 'deepseek-chat', object: 'model' },
-    { id: 'deepseek-reasoner', object: 'model' },
+    { id: 'deepseek-v4-pro', object: 'model' },
+    { id: 'deepseek-v4-flash', object: 'model' },
     { id: 'deepseek-embedding', object: 'model' },
-  ];
-
-  const qwenFixture = [
-    { id: 'qwen-plus', object: 'model' },
-    { id: 'qwen-turbo', object: 'model' },
-    { id: 'qwen-tts', object: 'model' },
   ];
 
   let openaiCompatibleUrl = null;
@@ -178,10 +196,17 @@ async function run() {
     },
   );
   assert.equal(deepseekResult.ok, true);
+  assert.equal(deepseekResult.source, 'live');
   assert.equal(openaiCompatibleUrl, 'https://api.deepseek.com/models');
-  assertContainsAll(modelIds(deepseekResult), ['deepseek-chat', 'deepseek-reasoner', 'deepseek-embedding']);
-  assert.deepStrictEqual(sortedUnique(recommendedIds(deepseekResult)), ['deepseek-chat', 'deepseek-reasoner']);
-  assert.ok(!recommendedIds(deepseekResult).includes('deepseek-embedding'));
+  assertContainsAll(modelIds(deepseekResult), ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-embedding']);
+  assert.deepStrictEqual(recommendedIds(deepseekResult), ['deepseek-v4-pro', 'deepseek-v4-flash']);
+
+  const qwenFixture = [
+    { id: 'qwen3-max', object: 'model' },
+    { id: 'qwen3.6-plus', object: 'model' },
+    { id: 'qwen3.6-flash', object: 'model' },
+    { id: 'qwen-tts', object: 'model' },
+  ];
 
   const qwenResult = await discoverModels(
     'qwen',
@@ -194,9 +219,9 @@ async function run() {
     },
   );
   assert.equal(qwenResult.ok, true);
-  assertContainsAll(modelIds(qwenResult), ['qwen-plus', 'qwen-turbo', 'qwen-tts']);
-  assert.deepStrictEqual(sortedUnique(recommendedIds(qwenResult)), ['qwen-plus', 'qwen-turbo']);
-  assert.ok(!recommendedIds(qwenResult).includes('qwen-tts'));
+  assert.equal(qwenResult.source, 'live');
+  assertContainsAll(modelIds(qwenResult), ['qwen3-max', 'qwen3.6-plus', 'qwen3.6-flash', 'qwen-tts']);
+  assert.deepStrictEqual(recommendedIds(qwenResult), ['qwen3-max', 'qwen3.6-plus', 'qwen3.6-flash']);
 
   const customMissingBaseUrl = await discoverModels(
     'openai_compatible_custom',
@@ -206,12 +231,62 @@ async function run() {
     },
   );
   assert.equal(customMissingBaseUrl.ok, false);
+  assert.equal(customMissingBaseUrl.source, 'fallback');
   assert.match(customMissingBaseUrl.warning, /Missing base URL/);
+
+  const tierInput = [
+    { id: 'model-a', displayName: 'Alpha', tier: 'balanced', capabilities: { text: true } },
+    { id: 'model-b', displayName: 'Beta', tier: 'premium', capabilities: { text: true } },
+    { id: 'model-c', displayName: 'Gamma', tier: 'unknown', capabilities: { text: true } },
+    { id: 'model-d', displayName: 'Delta', tier: 'cheap', capabilities: { text: true } },
+    { id: 'model-e', displayName: 'Epsilon', tier: 'reasoning', capabilities: { text: true } },
+  ];
+
+  const grouped = groupModelsByTier(tierInput);
+  assert.deepStrictEqual(Object.keys(grouped), ['premium', 'balanced', 'cheap', 'reasoning', 'unknown']);
+  assert.deepStrictEqual(grouped.premium.map(model => model.id), ['model-b']);
+  assert.deepStrictEqual(grouped.balanced.map(model => model.id), ['model-a']);
+  assert.deepStrictEqual(grouped.cheap.map(model => model.id), ['model-d']);
+  assert.deepStrictEqual(grouped.reasoning.map(model => model.id), ['model-e']);
+  assert.deepStrictEqual(grouped.unknown.map(model => model.id), ['model-c']);
+
+  const sortedA = sortRecommendedModels('openai', [
+    { id: 'z', displayName: 'Zed', tier: 'balanced' },
+    { id: 'a', displayName: 'Alpha', tier: 'premium' },
+    { id: 'b', displayName: 'Beta', tier: 'balanced' },
+    { id: 'c', displayName: 'Gamma', tier: 'cheap' },
+  ]).map(model => model.id);
+  const sortedB = sortRecommendedModels('openai', [
+    { id: 'c', displayName: 'Gamma', tier: 'cheap' },
+    { id: 'b', displayName: 'Beta', tier: 'balanced' },
+    { id: 'z', displayName: 'Zed', tier: 'balanced' },
+    { id: 'a', displayName: 'Alpha', tier: 'premium' },
+  ]).map(model => model.id);
+  assert.deepStrictEqual(sortedA, sortedB);
+  assert.deepStrictEqual(sortedA, ['a', 'b', 'z', 'c']);
+
+  const classifiedOpenAI = classifyModel('openai', 'gpt-5.5', { displayName: 'GPT-5.5' });
+  const classifiedGemini = classifyModel('gemini', 'gemini-2.5-flash-lite', { displayName: 'Gemini 2.5 Flash Lite' });
+  assert.equal(classifiedOpenAI, 'reasoning');
+  assert.equal(classifiedGemini, 'cheap');
+
+  const usable = filterUsableModels('openai', [
+    { id: 'gpt-5.5', displayName: 'GPT-5.5', tier: 'reasoning', capabilities: { text: true }, deprecated: false },
+    { id: 'gpt-4-turbo-preview', displayName: 'GPT-4 Turbo Preview', tier: 'premium', capabilities: { text: true }, deprecated: true },
+    { id: 'text-embedding-3-small', displayName: 'Text Embedding', tier: 'unknown', capabilities: { text: false }, deprecated: false },
+  ]);
+  assert.deepStrictEqual(usable.map(model => model.id), ['gpt-5.5']);
 
   console.log('Model discovery validation passed.');
 }
 
-run().catch(error => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  runValidation().catch(error => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  runValidation,
+};

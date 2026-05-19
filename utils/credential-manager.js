@@ -4,16 +4,14 @@ const { google } = require('googleapis');
 const inquirer = require('inquirer');
 const chalk = require('chalk');
 const { Logger } = require('./logger');
+const { discoverModels } = require('./model-discovery');
+const { groupModelsByTier } = require('./model-discovery/tiering');
 const {
   getProvider,
   listProviders,
   listProviderChoices,
   isSupportedProvider,
 } = require('./llm-provider-registry');
-const {
-  getTemporaryModelChoices,
-  isManualModelEntryProvider,
-} = require('./llm-model-presets');
 
 class CredentialManager {
   constructor() {
@@ -457,44 +455,6 @@ class CredentialManager {
     return answer.baseUrl.trim();
   }
 
-  async promptProviderModel(providerId) {
-    const providerMeta = getProvider(providerId);
-
-    if (!providerMeta) {
-      throw new Error(`Unsupported provider: ${providerId}`);
-    }
-
-    if (isManualModelEntryProvider(providerId)) {
-      const answer = await inquirer.prompt([
-        {
-          type: 'input',
-          name: 'model',
-          message: `Enter the model ID for ${providerMeta.displayName}:`,
-          validate: input => input.trim().length > 0 || 'Model ID is required',
-        },
-      ]);
-
-      return answer.model.trim();
-    }
-
-    const choices = getTemporaryModelChoices(providerId);
-    if (!choices || choices.length === 0) {
-      throw new Error(`No temporary model choices defined for ${providerId}`);
-    }
-
-    const answer = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'model',
-        message: `Select a temporary model for ${providerMeta.displayName}:`,
-        choices,
-        default: choices[0].value,
-      },
-    ]);
-
-    return answer.model;
-  }
-
   async collectProviderConfiguration(providerId) {
     const providerMeta = getProvider(providerId);
     if (!providerMeta) {
@@ -512,14 +472,127 @@ class CredentialManager {
     if (providerMeta.requiresBaseUrl || providerMeta.defaultBaseUrl) {
       baseUrl = await this.promptProviderBaseUrl(providerMeta);
     }
-    const model = await this.promptProviderModel(providerId);
 
     return {
       enabled: true,
       apiKey,
-      model,
       ...(baseUrl ? { baseUrl } : {}),
     };
+  }
+
+  buildModelChoices(models, { includeShowAll = false } = {}) {
+    const grouped = groupModelsByTier(models);
+    const choices = [];
+    const tierOrder = ['premium', 'balanced', 'cheap', 'reasoning', 'unknown'];
+
+    for (const tier of tierOrder) {
+      const tierModels = grouped[tier] || [];
+      if (tierModels.length === 0) {
+        continue;
+      }
+
+      choices.push(new inquirer.Separator(`── ${({
+        premium: 'Premium / highest quality',
+        balanced: 'Balanced',
+        cheap: 'Cheap / fast',
+        reasoning: 'Reasoning',
+        unknown: 'Unknown',
+      }[tier])} ──`));
+
+      for (const model of tierModels) {
+        const deprecated = model.deprecated ? ' (deprecated)' : '';
+        choices.push({
+          name: `${model.displayName} (${model.id})${deprecated}`,
+          value: model.id,
+        });
+      }
+    }
+
+    if (includeShowAll) {
+      choices.push(new inquirer.Separator('── Actions ──'));
+      choices.push({
+        name: 'Show all discovered models',
+        value: '__show_all_models__',
+      });
+    }
+
+    choices.push({
+      name: 'Manually enter model ID',
+      value: '__manual_model_id__',
+    });
+
+    return choices;
+  }
+
+  async promptManualModelId(providerMeta) {
+    const answer = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'model',
+        message: `Enter the model ID for ${providerMeta.displayName}:`,
+        validate: input => input.trim().length > 0 || 'Model ID is required',
+      },
+    ]);
+
+    return answer.model.trim();
+  }
+
+  async chooseProviderModel(providerMeta, discoveryResult, { forceManual = false } = {}) {
+    const recommendedModels = Array.isArray(discoveryResult?.recommendedModels)
+      ? discoveryResult.recommendedModels
+      : [];
+    const allModels = Array.isArray(discoveryResult?.allModels)
+      ? discoveryResult.allModels
+      : [];
+
+    if (discoveryResult?.source === 'live' && recommendedModels.length > 0) {
+      console.log(chalk.green(`Discovered live models for ${providerMeta.displayName}`));
+    } else if (discoveryResult?.source === 'fallback' && recommendedModels.length > 0) {
+      console.log(chalk.yellow('Live model discovery failed or returned no usable models. Showing verified fallback model list.'));
+    } else {
+      console.log(chalk.yellow('No usable model list found. Please manually enter a model ID.'));
+    }
+
+    if (discoveryResult?.warning) {
+      console.log(chalk.gray(discoveryResult.warning));
+    }
+
+    const manualPreferred = forceManual || (providerMeta.id === 'openai_compatible_custom' && recommendedModels.length === 0);
+
+    if (recommendedModels.length === 0 && allModels.length === 0) {
+      return this.promptManualModelId(providerMeta);
+    }
+
+    const promptSelection = async models => {
+      const choices = this.buildModelChoices(models, { includeShowAll: allModels.length > models.length });
+      const defaultChoice = manualPreferred ? '__manual_model_id__' : (choices.find(choice => choice && choice.value && !String(choice.value).startsWith('__'))?.value || '__manual_model_id__');
+
+      const answer = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'selection',
+          message: `Select a model for ${providerMeta.displayName}:`,
+          choices,
+          default: defaultChoice,
+        },
+      ]);
+
+      if (answer.selection === '__show_all_models__') {
+        return promptSelection(allModels);
+      }
+
+      if (answer.selection === '__manual_model_id__') {
+        return this.promptManualModelId(providerMeta);
+      }
+
+      return answer.selection;
+    };
+
+    if (recommendedModels.length === 0) {
+      return promptSelection([]);
+    }
+
+    return promptSelection(recommendedModels);
   }
 
   // Azure Speech Services (TTS)
@@ -915,6 +988,17 @@ class CredentialManager {
     const selectedProviderConfigs = {};
     for (const providerId of selectedProviderIds) {
       selectedProviderConfigs[providerId] = await this.collectProviderConfiguration(providerId);
+    }
+
+    for (const providerId of selectedProviderIds) {
+      const providerMeta = getProvider(providerId);
+      const providerConfig = selectedProviderConfigs[providerId];
+      const discoveryResult = await discoverModels(providerId, providerConfig);
+      const model = await this.chooseProviderModel(providerMeta, discoveryResult);
+      selectedProviderConfigs[providerId] = {
+        ...providerConfig,
+        model,
+      };
     }
 
     const selectedModels = {};

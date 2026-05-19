@@ -22,13 +22,10 @@ This system runs 24/7 to:
    - GPT-4 for intelligent content generation
    - DALL-E 3 for stunning thumbnails
    - Whisper for speech processing
-   - **Cost**: ~$0.10-0.30 per video
    - **Best for**: Professional creators wanting highest quality
 
 2. **Google Gemini (Budget-Friendly)**
-   - Free tier: 60 requests/minute
-   - Can generate multiple videos daily at no cost
-   - **Cost**: FREE for most users
+   - Budget-friendly option with a generous free tier
    - **Best for**: Beginners and hobby creators
 
 3. **Custom AI Integration**
@@ -37,6 +34,7 @@ This system runs 24/7 to:
    - Any OpenAI-compatible API
 
 The credential schema also supports Anthropic Claude, DeepSeek, Qwen / Alibaba Model Studio, and custom OpenAI-compatible APIs through the normalized `credentials.ai` block.
+During setup, the AI provider step now discovers live model catalogs first, falls back to a small verified catalog when needed, and always allows manual model entry.
 
 ### 📊 What Each Agent Does
 
@@ -67,23 +65,18 @@ The credential schema also supports Anthropic Claude, DeepSeek, Qwen / Alibaba M
 → Manages playlists and end screens
 ```
 
-### 💰 Cost Breakdown
+### 💰 Pricing Notes
 
-| Component | Free Tier | Paid Usage |
-|-----------|-----------|------------|
-| **YouTube API** | ✅ 10,000 units/day | ✅ Same |
-| **OpenAI** | ❌ None | ~$0.20/video |
-| **Google Gemini** | ✅ 60 req/min | $0.00035/1k chars |
-| **Hosting** | ✅ Local PC | $5-20/month VPS |
-| **Total Monthly** | **$0** | **$6-50** |
+Pricing changes frequently, so check the current provider docs before choosing a model or estimating costs.
+The setup wizard and discovery output are designed to help you compare available models without relying on hard-coded pricing assumptions.
 
 ### 🖥️ Deployment Options
 
-- **Local Computer**: Run on your PC/Mac (free)
-- **Raspberry Pi**: Low-power home automation (~$50 one-time)
-- **Cloud VPS**: DigitalOcean, Linode ($5/month)
+- **Local Computer**: Run on your PC/Mac
+- **Raspberry Pi**: Low-power home automation
+- **Cloud VPS**: DigitalOcean, Linode
 - **Free Cloud**: Railway, Render (with limitations)
-- **Serverless**: Vercel, Netlify (pay-per-use)
+- **Serverless**: Vercel, Netlify
 
 ## 🚀 Quick Start
 
@@ -118,6 +111,8 @@ The credential schema also supports Anthropic Claude, DeepSeek, Qwen / Alibaba M
    The setup wizard will help you:
    - Get YouTube API credentials (step-by-step guide included)
    - Choose and configure AI providers
+   - Discover live model lists, grouped by tier, with verified fallback catalogs when needed
+   - Manually enter a model ID if discovery does not produce a usable option
    - Set your channel preferences
    - Configure automation schedule
 
@@ -160,9 +155,9 @@ The credential schema also supports Anthropic Claude, DeepSeek, Qwen / Alibaba M
 2. Click "API Keys" in sidebar
 3. Click "Create new secret key"
 4. Copy key to `.env` file as `OPENAI_API_KEY`
-5. Add $5-10 credits to get started
+5. Add credits if your chosen model or plan requires them
 
-**Pricing**: ~$0.01 per 1K tokens (approx 750 words)
+**Pricing**: See the current OpenAI pricing docs for the models you select.
 
 #### Option 2B: Google Gemini API (FREE Alternative)
 1. Visit [Google AI Studio](https://makersuite.google.com/)
@@ -170,7 +165,7 @@ The credential schema also supports Anthropic Claude, DeepSeek, Qwen / Alibaba M
 3. Create API key for new or existing project
 4. Copy key to `.env` file as `GEMINI_API_KEY`
 
-**Pricing**: FREE for 60 requests/minute, perfect for most users!
+**Pricing**: See the current Gemini pricing docs for your selected model and usage tier.
 
 ### Environment Variables
 
@@ -349,7 +344,7 @@ A: Yes! Run multiple instances with different configurations.
 A: No, as long as you create original content and follow YouTube guidelines.
 
 **Q: How much does it cost to run?**
-A: Can be completely FREE with Gemini, or ~$10-50/month with OpenAI.
+A: Costs vary by provider, model, and usage. Check the provider docs and the discovery output for current options.
 
 **Q: Can I customize the content style?**
 A: Yes! Full control over tone, style, topics, and format.

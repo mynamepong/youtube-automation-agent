@@ -1,0 +1,209 @@
+{
+  "openai": [
+    {
+      "id": "gpt-5.5",
+      "displayName": "GPT-5.5",
+      "tier": "premium",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": true,
+        "json": true
+      },
+      "providerDocsUrl": "https://platform.openai.com/docs/models",
+      "verifiedAt": "2026-05-20"
+    },
+    {
+      "id": "gpt-5.4",
+      "displayName": "GPT-5.4",
+      "tier": "balanced",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": true,
+        "json": true
+      },
+      "providerDocsUrl": "https://platform.openai.com/docs/models",
+      "verifiedAt": "2026-05-20"
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "displayName": "GPT-5.4 Mini",
+      "tier": "cheap",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": true,
+        "json": true
+      },
+      "providerDocsUrl": "https://platform.openai.com/docs/models",
+      "verifiedAt": "2026-05-20"
+    }
+  ],
+  "gemini": [
+    {
+      "id": "gemini-2.5-pro",
+      "displayName": "Gemini 2.5 Pro",
+      "tier": "reasoning",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": true,
+        "json": true
+      },
+      "providerDocsUrl": "https://ai.google.dev/gemini-api/docs/models",
+      "verifiedAt": "2026-05-20"
+    },
+    {
+      "id": "gemini-2.5-flash",
+      "displayName": "Gemini 2.5 Flash",
+      "tier": "balanced",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": false,
+        "json": true
+      },
+      "providerDocsUrl": "https://ai.google.dev/gemini-api/docs/models",
+      "verifiedAt": "2026-05-20"
+    },
+    {
+      "id": "gemini-2.5-flash-lite",
+      "displayName": "Gemini 2.5 Flash-Lite",
+      "tier": "cheap",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": false,
+        "json": true
+      },
+      "providerDocsUrl": "https://ai.google.dev/gemini-api/docs/models",
+      "verifiedAt": "2026-05-20"
+    }
+  ],
+  "anthropic": [
+    {
+      "id": "claude-opus-4-1-20250805",
+      "displayName": "Claude Opus 4.1",
+      "tier": "premium",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": true,
+        "json": true
+      },
+      "providerDocsUrl": "https://docs.anthropic.com/en/docs/about-claude/models/overview",
+      "verifiedAt": "2026-05-20"
+    },
+    {
+      "id": "claude-sonnet-4-20250514",
+      "displayName": "Claude Sonnet 4",
+      "tier": "balanced",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": true,
+        "json": true
+      },
+      "providerDocsUrl": "https://docs.anthropic.com/en/docs/about-claude/models/overview",
+      "verifiedAt": "2026-05-20"
+    },
+    {
+      "id": "claude-3-5-haiku-20241022",
+      "displayName": "Claude 3.5 Haiku",
+      "tier": "cheap",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": false,
+        "json": true
+      },
+      "providerDocsUrl": "https://docs.anthropic.com/en/docs/about-claude/models/overview",
+      "verifiedAt": "2026-05-20"
+    }
+  ],
+  "deepseek": [
+    {
+      "id": "deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "tier": "premium",
+      "capabilities": {
+        "text": true,
+        "vision": false,
+        "audio": false,
+        "reasoning": true,
+        "json": true
+      },
+      "providerDocsUrl": "https://api-docs.deepseek.com/news/news260424",
+      "verifiedAt": "2026-05-20"
+    },
+    {
+      "id": "deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "tier": "balanced",
+      "capabilities": {
+        "text": true,
+        "vision": false,
+        "audio": false,
+        "reasoning": true,
+        "json": true
+      },
+      "providerDocsUrl": "https://api-docs.deepseek.com/news/news260424",
+      "verifiedAt": "2026-05-20"
+    }
+  ],
+  "qwen": [
+    {
+      "id": "qwen3-max",
+      "displayName": "Qwen3 Max",
+      "tier": "premium",
+      "capabilities": {
+        "text": true,
+        "vision": false,
+        "audio": false,
+        "reasoning": true,
+        "json": true
+      },
+      "providerDocsUrl": "https://help.aliyun.com/zh/model-studio/model",
+      "verifiedAt": "2026-05-20"
+    },
+    {
+      "id": "qwen3.6-plus",
+      "displayName": "Qwen3.6 Plus",
+      "tier": "balanced",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": false,
+        "json": true
+      },
+      "providerDocsUrl": "https://help.aliyun.com/zh/model-studio/model",
+      "verifiedAt": "2026-05-20"
+    },
+    {
+      "id": "qwen3.6-flash",
+      "displayName": "Qwen3.6 Flash",
+      "tier": "cheap",
+      "capabilities": {
+        "text": true,
+        "vision": true,
+        "audio": false,
+        "reasoning": false,
+        "json": true
+      },
+      "providerDocsUrl": "https://help.aliyun.com/zh/model-studio/model",
+      "verifiedAt": "2026-05-20"
+    }
+  ],
+  "openai_compatible_custom": []
+}

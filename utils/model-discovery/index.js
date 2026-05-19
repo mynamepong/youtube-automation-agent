@@ -3,14 +3,13 @@ const { listOpenAIModels } = require('./openai');
 const { listGeminiModels } = require('./gemini');
 const { listAnthropicModels } = require('./anthropic');
 const { listOpenAICompatibleModels } = require('./openai-compatible');
-
-const TIER_ORDER = Object.freeze({
-  reasoning: 0,
-  premium: 1,
-  balanced: 2,
-  cheap: 3,
-  unknown: 4,
-});
+const {
+  classifyModel,
+  filterUsableModels,
+  sortRecommendedModels,
+  groupModelsByTier,
+} = require('./tiering');
+const fallbackCatalog = require('../../config/model-fallbacks.json');
 
 function toString(value) {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : '';
@@ -44,77 +43,18 @@ function isTextModel(providerId, modelId, rawModel, providerMeta) {
     const methods = Array.isArray(rawModel?.supportedGenerationMethods)
       ? rawModel.supportedGenerationMethods.map(method => String(method).toLowerCase())
       : [];
-    return methods.includes('generatecontent');
+    return methods.includes('generatecontent') || methods.includes('streamgeneratecontent');
   }
 
   if (providerId === 'anthropic') {
     return /claude/.test(textHints);
   }
 
-  if (isOpenAICompatibleProvider(providerId)) {
-    return !/(embedding|moderation|whisper|tts|audio|realtime|image|embedding)/.test(textHints);
+  if (providerId === 'deepseek' || providerId === 'qwen' || isOpenAICompatibleProvider(providerId)) {
+    return !/(embedding|moderation|whisper|tts|audio|realtime|image|dall-?e|sora)/.test(textHints);
   }
 
   return Boolean(providerMeta);
-}
-
-function inferTier(providerId, modelId, rawModel) {
-  const text = [
-    modelId,
-    rawModel?.displayName,
-    rawModel?.description,
-    rawModel?.name,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  if (providerId === 'anthropic') {
-    if (/opus/.test(text)) return 'premium';
-    if (/sonnet/.test(text)) return 'balanced';
-    if (/haiku/.test(text)) return 'cheap';
-    return 'unknown';
-  }
-
-  if (providerId === 'gemini') {
-    if (/flash-lite|lite/.test(text)) return 'cheap';
-    if (/flash/.test(text)) return 'balanced';
-    if (/pro/.test(text)) return 'reasoning';
-    return 'unknown';
-  }
-
-  if (providerId === 'openai') {
-    if (/mini|nano/.test(text)) return 'cheap';
-    if (/o[134]\b/.test(text) || /gpt-5/.test(text) || /reason/.test(text)) return 'reasoning';
-    if (/gpt-4\.1|gpt-4o|gpt-4-turbo|gpt-4\b/.test(text)) return 'premium';
-    if (/turbo/.test(text)) return 'balanced';
-    return 'unknown';
-  }
-
-  if (providerId === 'deepseek') {
-    if (/reasoner|reasoning/.test(text)) return 'reasoning';
-    if (/v4-pro|pro/.test(text)) return 'premium';
-    if (/flash|chat|plus|turbo/.test(text)) return /flash/.test(text) ? 'balanced' : 'balanced';
-    return 'unknown';
-  }
-
-  if (providerId === 'qwen') {
-    if (/max/.test(text)) return 'premium';
-    if (/plus|flash/.test(text)) return /flash/.test(text) ? 'cheap' : 'balanced';
-    if (/turbo/.test(text)) return 'cheap';
-    if (/qwq|reason/.test(text)) return 'reasoning';
-    return 'unknown';
-  }
-
-  if (isOpenAICompatibleProvider(providerId)) {
-    if (/reason/.test(text)) return 'reasoning';
-    if (/pro|max/.test(text)) return 'premium';
-    if (/flash|plus|turbo/.test(text)) return /flash/.test(text) ? 'balanced' : 'balanced';
-    if (/mini|nano|lite/.test(text)) return 'cheap';
-    return 'unknown';
-  }
-
-  return 'unknown';
 }
 
 function inferCapabilities(providerId, modelId, rawModel) {
@@ -141,6 +81,10 @@ function inferCapabilities(providerId, modelId, rawModel) {
     reasoning,
     json,
   };
+}
+
+function inferTier(providerId, modelId, rawModel) {
+  return classifyModel(providerId, modelId, rawModel);
 }
 
 function inferDeprecated(providerId, modelId, rawModel, providerModels) {
@@ -184,7 +128,18 @@ function normalizeModel(providerId, rawModel, providerModels) {
   }
 
   const displayName = toString(rawModel?.displayName || rawModel?.display_name || rawModel?.name || rawModel?.id) || titleCaseFromId(modelId);
-  const capabilities = inferCapabilities(providerId, modelId, rawModel);
+  const explicitCapabilities = rawModel?.capabilities && typeof rawModel.capabilities === 'object'
+    ? rawModel.capabilities
+    : null;
+  const capabilities = explicitCapabilities
+    ? {
+        text: Boolean(explicitCapabilities.text),
+        vision: Boolean(explicitCapabilities.vision),
+        audio: Boolean(explicitCapabilities.audio),
+        reasoning: Boolean(explicitCapabilities.reasoning),
+        json: Boolean(explicitCapabilities.json),
+      }
+    : inferCapabilities(providerId, modelId, rawModel);
   const deprecated = inferDeprecated(providerId, modelId, rawModel, providerModels || []);
   const source = rawModel?.source === 'fallback' ? 'fallback' : 'live';
 
@@ -201,16 +156,20 @@ function normalizeModel(providerId, rawModel, providerModels) {
 }
 
 function sortModels(models) {
-  return [...models].sort((left, right) => {
-    const tierDelta = TIER_ORDER[left.tier] - TIER_ORDER[right.tier];
-    if (tierDelta !== 0) {
-      return tierDelta;
-    }
+  return sortRecommendedModels(null, models);
+}
 
-    const leftName = left.displayName.toLowerCase();
-    const rightName = right.displayName.toLowerCase();
-    return leftName.localeCompare(rightName);
-  });
+function getFallbackEntries(providerId) {
+  return Array.isArray(fallbackCatalog?.[providerId]) ? fallbackCatalog[providerId] : [];
+}
+
+function normalizeFallbackModels(providerId, fallbackEntries) {
+  return fallbackEntries
+    .map(entry => normalizeModel(providerId, {
+      ...entry,
+      source: 'fallback',
+    }, fallbackEntries))
+    .filter(Boolean);
 }
 
 function buildFallbackResult(providerId, warning) {
@@ -230,8 +189,8 @@ async function discoverModels(providerId, providerConfig = {}, options = {}) {
     return buildFallbackResult(providerId, `Unsupported provider: ${providerId}`);
   }
 
+  let adapterResult;
   try {
-    let adapterResult;
     if (providerId === 'openai') {
       adapterResult = await listOpenAIModels(providerConfig, options);
     } else if (providerId === 'gemini') {
@@ -243,39 +202,70 @@ async function discoverModels(providerId, providerConfig = {}, options = {}) {
     } else {
       return buildFallbackResult(providerId, `No discovery adapter registered for provider: ${providerId}`);
     }
+  } catch (error) {
+    adapterResult = {
+      ok: false,
+      source: 'fallback',
+      models: [],
+      warning: `Live model discovery failed: ${error.message}`,
+    };
+  }
 
-    if (!adapterResult?.ok) {
-      return {
-        providerId,
-        ok: false,
-        source: adapterResult?.source || 'fallback',
-        recommendedModels: [],
-        allModels: [],
-        warning: adapterResult?.warning || 'Live model discovery failed.',
-      };
-    }
+  const rawModels = Array.isArray(adapterResult?.models) ? adapterResult.models : [];
+  const allModels = sortModels(
+    rawModels
+      .map(model => normalizeModel(providerId, model, rawModels))
+      .filter(Boolean),
+  );
+  const maxAllModels = Number.isInteger(options.maxAllModels) && options.maxAllModels > 0
+    ? options.maxAllModels
+    : null;
+  const visibleAllModels = maxAllModels ? allModels.slice(0, maxAllModels) : allModels;
+  const recommendedLive = sortRecommendedModels(providerId, filterUsableModels(providerId, visibleAllModels));
+  const maxRecommendedModels = Number.isInteger(options.maxRecommendedModels) && options.maxRecommendedModels > 0
+    ? options.maxRecommendedModels
+    : 10;
 
-    const rawModels = Array.isArray(adapterResult.models) ? adapterResult.models : [];
-    const allModels = sortModels(
-      rawModels
-        .map(model => normalizeModel(providerId, model, rawModels))
-        .filter(Boolean),
-    );
-    const recommendedModels = sortModels(
-      allModels.filter(model => model.capabilities.text && !model.deprecated),
-    );
+  if (recommendedLive.length > 0) {
+    return {
+      providerId,
+      ok: true,
+      source: adapterResult?.source || 'live',
+      recommendedModels: recommendedLive.slice(0, maxRecommendedModels),
+      allModels: visibleAllModels,
+      warning: adapterResult?.warning || null,
+    };
+  }
+
+  const fallbackModels = normalizeFallbackModels(providerId, getFallbackEntries(providerId));
+  const sortedFallbackModels = sortRecommendedModels(providerId, filterUsableModels(providerId, fallbackModels));
+  if (sortedFallbackModels.length > 0) {
+    const warning = adapterResult?.ok === false
+      ? `${adapterResult?.warning || 'Live model discovery failed.'} Showing verified fallback model list.`
+      : 'Live model discovery failed or returned no usable models. Showing verified fallback model list.';
 
     return {
       providerId,
       ok: true,
-      source: adapterResult.source || 'live',
-      recommendedModels,
-      allModels,
-      warning: adapterResult.warning || null,
+      source: 'fallback',
+      recommendedModels: sortedFallbackModels.slice(0, maxRecommendedModels),
+      allModels: visibleAllModels,
+      warning,
     };
-  } catch (error) {
-    return buildFallbackResult(providerId, `Live model discovery failed: ${error.message}`);
   }
+
+  const warning = adapterResult?.ok === false
+    ? `${adapterResult?.warning || 'Live model discovery failed.'} No usable model list found. Please manually enter a model ID.`
+    : 'No usable model list found. Please manually enter a model ID.';
+
+  return {
+    providerId,
+    ok: false,
+    source: adapterResult?.ok === false ? 'fallback' : (adapterResult?.source || 'live'),
+    recommendedModels: [],
+    allModels: visibleAllModels,
+    warning,
+  };
 }
 
 module.exports = {
@@ -285,4 +275,6 @@ module.exports = {
   inferCapabilities,
   inferDeprecated,
   sortModels,
+  getFallbackEntries,
+  normalizeFallbackModels,
 };

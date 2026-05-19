@@ -20,14 +20,26 @@ function formatCapabilities(capabilities) {
   return labels.length > 0 ? ` [${labels.join(', ')}]` : '';
 }
 
+function formatTierLabel(tier) {
+  return ({
+    premium: 'Premium / highest quality',
+    balanced: 'Balanced',
+    cheap: 'Cheap / fast',
+    reasoning: 'Reasoning',
+    unknown: 'Unknown',
+  }[tier] || tier);
+}
+
 async function main() {
   let CredentialManager;
   let discoverModels;
   let getProvider;
+  let groupModelsByTier;
 
   try {
     ({ CredentialManager } = require('./utils/credential-manager'));
     ({ discoverModels } = require('./utils/model-discovery'));
+    ({ groupModelsByTier } = require('./utils/model-discovery/tiering'));
     ({ getProvider } = require('./utils/llm-provider-registry'));
   } catch (error) {
     failWithDependencyMessage(error);
@@ -52,11 +64,7 @@ async function main() {
 
       console.log('');
       console.log(`${providerMeta?.displayName || providerId} (${providerId})`);
-
-      if (!result.ok) {
-        console.log(`  Warning: ${result.warning}`);
-        continue;
-      }
+      console.log(`  Source: ${result.source}`);
 
       if (result.warning) {
         console.log(`  Warning: ${result.warning}`);
@@ -64,12 +72,22 @@ async function main() {
 
       if (!Array.isArray(result.recommendedModels) || result.recommendedModels.length === 0) {
         console.log('  No recommended models found.');
+        console.log('  Manually enter a model ID in setup if needed.');
         continue;
       }
 
-      for (const model of result.recommendedModels) {
-        const deprecated = model.deprecated ? ' (deprecated)' : '';
-        console.log(`  - ${model.displayName} (${model.id})${formatCapabilities(model.capabilities)}${deprecated}`);
+      const grouped = groupModelsByTier(result.recommendedModels);
+      for (const tier of ['premium', 'balanced', 'cheap', 'reasoning', 'unknown']) {
+        const models = grouped[tier];
+        if (!models || models.length === 0) {
+          continue;
+        }
+
+        console.log(`  ${formatTierLabel(tier)}`);
+        for (const model of models) {
+          const deprecated = model.deprecated ? ' (deprecated)' : '';
+          console.log(`    - ${model.displayName} (${model.id})${formatCapabilities(model.capabilities)}${deprecated}`);
+        }
       }
     }
 

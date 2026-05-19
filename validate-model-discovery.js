@@ -225,10 +225,34 @@ async function runValidation() {
   assert.ok(!recommendedIds(geminiResult).includes('models/provider-preview-model'));
 
   const anthropicFixture = [
-    { id: 'claude-opus-4-1-20250805', display_name: 'Claude Opus 4.1' },
-    { id: 'claude-sonnet-4-20250514', display_name: 'Claude Sonnet 4' },
-    { id: 'claude-3-5-haiku-20241022', display_name: 'Claude Haiku 3.5' },
-    { id: 'provider-preview-model', display_name: 'Provider Preview Model' },
+    {
+      id: 'provider-premium-live-model',
+      display_name: 'Provider Premium Live Model',
+      supported_generation_methods: ['generateContent'],
+      capabilities: { text: true, vision: true, audio: false, reasoning: true, json: true },
+      tier: 'premium',
+    },
+    {
+      id: 'provider-balanced-live-model',
+      display_name: 'Provider Balanced Live Model',
+      supported_generation_methods: ['generateContent'],
+      capabilities: { text: true, vision: true, audio: false, reasoning: false, json: true },
+      tier: 'balanced',
+    },
+    {
+      id: 'provider-cheap-live-model',
+      display_name: 'Provider Cheap Live Model',
+      supported_generation_methods: ['generateContent'],
+      capabilities: { text: true, vision: true, audio: false, reasoning: false, json: true },
+      tier: 'cheap',
+    },
+    {
+      id: 'provider-preview-model',
+      display_name: 'Provider Preview Model',
+      supported_generation_methods: ['generateContent'],
+      capabilities: { text: true, vision: true, audio: false, reasoning: false, json: true },
+      deprecated: true,
+    },
   ];
 
   const anthropicResult = await discoverModels(
@@ -241,15 +265,15 @@ async function runValidation() {
   assert.equal(anthropicResult.ok, true);
   assert.equal(anthropicResult.source, 'live');
   assertContainsAll(modelIds(anthropicResult), [
-    'claude-opus-4-1-20250805',
-    'claude-sonnet-4-20250514',
-    'claude-3-5-haiku-20241022',
+    'provider-premium-live-model',
+    'provider-balanced-live-model',
+    'provider-cheap-live-model',
     'provider-preview-model',
   ]);
   assert.deepStrictEqual(recommendedIds(anthropicResult), [
-    'claude-opus-4-1-20250805',
-    'claude-sonnet-4-20250514',
-    'claude-3-5-haiku-20241022',
+    'provider-premium-live-model',
+    'provider-balanced-live-model',
+    'provider-cheap-live-model',
   ]);
   assert.ok(!recommendedIds(anthropicResult).includes('provider-preview-model'));
 

@@ -16,25 +16,34 @@ This system runs 24/7 to:
 
 **You do NOT need Claude to use this system!** The YouTube Automation Agent is designed to work with multiple AI providers, giving you flexibility and cost control.
 
-### 🤖 AI Provider Options
+### Supported AI Providers
 
-1. **OpenAI (Recommended)**
-   - GPT-4 for intelligent content generation
-   - DALL-E 3 for stunning thumbnails
-   - Whisper for speech processing
-   - **Best for**: Professional creators wanting highest quality
+The setup wizard supports these providers through the normalized `credentials.ai` flow:
 
-2. **Google Gemini (Budget-Friendly)**
-   - Budget-friendly option with a generous free tier
-   - **Best for**: Beginners and hobby creators
+- **OpenAI** - usually higher quality, with strong model and tooling support
+- **Google Gemini** - usually cheaper/faster for general content workflows
+- **Anthropic Claude** - usually strong for reasoning-heavy writing tasks
+- **DeepSeek** - OpenAI-compatible, often a lower-cost option depending on usage and plan
+- **Qwen / Alibaba Model Studio** - OpenAI-compatible, often a lower-cost option depending on usage and plan
+- **Custom OpenAI-compatible API** - connect any provider that speaks the OpenAI-style API
 
-3. **Custom AI Integration**
-   - Support for Anthropic Claude (if you prefer)
-   - Local models via Ollama
-   - Any OpenAI-compatible API
+Setup supports three operating modes:
 
-The credential schema also supports Anthropic Claude, DeepSeek, Qwen / Alibaba Model Studio, and custom OpenAI-compatible APIs through the normalized `credentials.ai` block.
-During setup, the AI provider step now discovers live model catalogs first, falls back to a small verified catalog when needed, and always allows manual model entry.
+- **Single provider mode** - one provider for everything
+- **Primary + fallback mode** - one provider first, another provider if the primary is unavailable
+- **Multi-provider mode** - keep several providers configured and choose per task later
+
+The setup wizard discovers live model lists first, then falls back to a verified model catalog in `config/model-fallbacks.json` when live discovery is empty or unavailable. If no usable model is discovered, you can still manually enter a model ID during setup.
+
+Model tier labels are intended as guidance, not pricing claims:
+
+- **Cheap** models are usually cheaper or faster
+- **Balanced** models are a middle ground
+- **Premium** models are usually higher quality
+- Actual pricing always depends on the provider and the model you choose
+
+After setup, you can change providers by rerunning `npm run setup` or by editing `config/credentials.json` and `.env` together. To check your current configuration, run `npm run validate:credentials`.
+For the setup hardening checks covered in this release, run `npm run test:setup-ai`.
 
 ### 📊 What Each Agent Does
 
@@ -175,23 +184,28 @@ NODE_ENV=production
 PORT=3456
 LOG_LEVEL=info
 
-# AI Provider Keys (add only what you need)
-OPENAI_API_KEY=your-key-here
-GEMINI_API_KEY=your-key-here
-ANTHROPIC_API_KEY=your-key-here
-DEEPSEEK_API_KEY=your-key-here
-QWEN_API_KEY=your-key-here
-CUSTOM_LLM_API_KEY=your-key-here
-CUSTOM_LLM_BASE_URL=https://your-openai-compatible-endpoint/v1
+# AI Provider Keys
+AI_PROVIDER=
+AI_PRIMARY_PROVIDER=
+AI_FALLBACK_PROVIDER=
+AI_MODEL=
+AI_ENABLED_PROVIDERS=
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+ANTHROPIC_API_KEY=
+DEEPSEEK_API_KEY=
+QWEN_API_KEY=
+CUSTOM_LLM_API_KEY=
+CUSTOM_LLM_BASE_URL=
 
 # YouTube Settings
 YOUTUBE_REGION=US
 DEFAULT_PRIVACY_STATUS=public
 
 # Content Settings
-CHANNEL_NAME=Your Channel Name
-TARGET_AUDIENCE=Your target audience
-POSTING_FREQUENCY=daily
+CHANNEL_NAME=
+TARGET_AUDIENCE=
+POSTING_FREQUENCY=
 ```
 
 ## 🚦 First Run Tutorial

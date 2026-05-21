@@ -11,7 +11,15 @@ const {
   listProviders,
   listProviderChoices,
   isSupportedProvider,
+  getEnvKeyForProvider,
 } = require('./llm-provider-registry');
+
+async function writeJsonAtomic(filePath, payload) {
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(tempPath, JSON.stringify(payload, null, 2));
+  await fs.rename(tempPath, filePath);
+}
 
 class CredentialManager {
   constructor() {
@@ -36,6 +44,8 @@ class CredentialManager {
   }
 
   async loadCredentials() {
+    const before = JSON.stringify(this.credentials);
+
     try {
       const data = await fs.readFile(this.credentialsPath, 'utf8');
       this.credentials = JSON.parse(data);
@@ -45,6 +55,11 @@ class CredentialManager {
 
     this._credentialsLoaded = true;
     this.normalizeAIConfig();
+
+    const after = JSON.stringify(this.credentials);
+    if (before !== after && (this.credentials.ai || this.credentials.openai || this.credentials.gemini || this.credentials.youtube)) {
+      await this.saveCredentials();
+    }
   }
 
   async loadTokens() {
@@ -59,23 +74,131 @@ class CredentialManager {
   }
 
   async saveCredentials() {
-    await fs.mkdir(path.dirname(this.credentialsPath), { recursive: true });
     this.normalizeAIConfig();
-    await fs.writeFile(this.credentialsPath, JSON.stringify(this.credentials, null, 2));
+    await writeJsonAtomic(this.credentialsPath, this.credentials);
     this._credentialsLoaded = true;
   }
 
   async saveTokens() {
-    await fs.mkdir(path.dirname(this.tokensPath), { recursive: true });
-    await fs.writeFile(this.tokensPath, JSON.stringify(this.tokens, null, 2));
+    await writeJsonAtomic(this.tokensPath, this.tokens);
     this._tokensLoaded = true;
+  }
+
+  _getString(value) {
+    return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+  }
+
+  _getEnvString(name) {
+    return this._getString(process.env[name]);
+  }
+
+  _getProviderEnvironmentConfig(providerId) {
+    const providerMeta = getProvider(providerId);
+    const envKey = getEnvKeyForProvider(providerId);
+
+    return {
+      apiKey: envKey ? this._getEnvString(envKey) : null,
+      baseUrl: providerId === 'openai_compatible_custom'
+        ? this._getEnvString('CUSTOM_LLM_BASE_URL')
+        : providerMeta?.defaultBaseUrl || null,
+    };
+  }
+
+  _buildEnvDerivedAIConfig() {
+    const supportedProviders = listProviders();
+    const envEnabledProviders = (this._getEnvString('AI_ENABLED_PROVIDERS') || '')
+      .split(',')
+      .map(providerId => providerId.trim())
+      .filter(providerId => isSupportedProvider(providerId));
+    const providerIdsFromSecrets = supportedProviders
+      .map(provider => provider.id)
+      .filter(providerId => Boolean(this._getProviderEnvironmentConfig(providerId).apiKey));
+    const envPrimaryProvider = this._getEnvString('AI_PRIMARY_PROVIDER') || this._getEnvString('AI_PROVIDER');
+    const envFallbackProvider = this._getEnvString('AI_FALLBACK_PROVIDER');
+    const envModel = this._getEnvString('AI_MODEL');
+    const selectedProviderIds = [];
+
+    for (const providerId of [
+      ...envEnabledProviders,
+      ...providerIdsFromSecrets,
+      ...(isSupportedProvider(envPrimaryProvider) ? [envPrimaryProvider] : []),
+      ...(isSupportedProvider(envFallbackProvider) ? [envFallbackProvider] : []),
+    ]) {
+      if (providerId && !selectedProviderIds.includes(providerId)) {
+        selectedProviderIds.push(providerId);
+      }
+    }
+
+    if (selectedProviderIds.length === 0 && !envModel && !envPrimaryProvider && !envFallbackProvider) {
+      return null;
+    }
+
+    const envProviders = {};
+    const selectedModels = {};
+
+    for (const providerId of selectedProviderIds) {
+      const providerConfig = this._getProviderEnvironmentConfig(providerId);
+      envProviders[providerId] = {
+        enabled: true,
+        apiKey: providerConfig.apiKey || '',
+        model: null,
+        ...(providerConfig.baseUrl ? { baseUrl: providerConfig.baseUrl } : {}),
+      };
+    }
+
+    let mode = 'single';
+    if (selectedProviderIds.length >= 3 || this._getEnvString('AI_PROVIDER') === 'multi') {
+      mode = 'multi';
+    } else if (
+      selectedProviderIds.length === 2
+      || (isSupportedProvider(envPrimaryProvider) && isSupportedProvider(envFallbackProvider))
+    ) {
+      mode = 'fallback';
+    }
+
+    let primaryProvider = null;
+    let fallbackProvider = null;
+
+    if (mode === 'multi') {
+      primaryProvider = null;
+      fallbackProvider = null;
+    } else if (mode === 'fallback') {
+      primaryProvider = isSupportedProvider(envPrimaryProvider) && selectedProviderIds.includes(envPrimaryProvider)
+        ? envPrimaryProvider
+        : selectedProviderIds[0] || null;
+      fallbackProvider = isSupportedProvider(envFallbackProvider) && selectedProviderIds.includes(envFallbackProvider) && envFallbackProvider !== primaryProvider
+        ? envFallbackProvider
+        : selectedProviderIds.find(providerId => providerId !== primaryProvider) || null;
+    } else {
+      primaryProvider = isSupportedProvider(envPrimaryProvider) && selectedProviderIds.includes(envPrimaryProvider)
+        ? envPrimaryProvider
+        : selectedProviderIds[0] || null;
+      fallbackProvider = null;
+    }
+
+    if (envModel && primaryProvider) {
+      selectedModels[primaryProvider] = envModel;
+      if (envProviders[primaryProvider]) {
+        envProviders[primaryProvider].model = envModel;
+      }
+    }
+
+    return {
+      mode,
+      primaryProvider,
+      fallbackProvider,
+      enabledProviders: selectedProviderIds,
+      selectedModels,
+      providers: envProviders,
+    };
   }
 
   normalizeAIConfig() {
     const supportedProviders = listProviders();
-    const aiConfig = this.credentials.ai && typeof this.credentials.ai === 'object'
+    const aiConfig = this.credentials.ai && typeof this.credentials.ai === 'object' && Object.keys(this.credentials.ai).length > 0
       ? this.credentials.ai
       : null;
+    const envConfig = this._buildEnvDerivedAIConfig();
     const explicitProviders = aiConfig?.providers && typeof aiConfig.providers === 'object'
       ? aiConfig.providers
       : {};
@@ -92,11 +215,23 @@ class CredentialManager {
     const hasLegacyGemini = this.credentials.gemini && typeof this.credentials.gemini === 'object';
     const useLegacyInference = !aiConfig && (hasLegacyOpenAI || hasLegacyGemini);
 
+    const useEnvConfig = !aiConfig;
+    const envEnabledProviders = useEnvConfig && Array.isArray(envConfig?.enabledProviders)
+      ? envConfig.enabledProviders
+      : [];
+    const envProviders = useEnvConfig && envConfig?.providers && typeof envConfig.providers === 'object'
+      ? envConfig.providers
+      : {};
+    const envSelectedModels = useEnvConfig && envConfig?.selectedModels && typeof envConfig.selectedModels === 'object'
+      ? envConfig.selectedModels
+      : {};
+    const envPrimaryProvider = useEnvConfig ? (envConfig?.primaryProvider || null) : null;
+    const envFallbackProvider = useEnvConfig ? (envConfig?.fallbackProvider || null) : null;
+
     const normalizedProviders = {};
     const normalizedSelectedModels = {};
     const normalizedEnabledProviders = [];
 
-    const getString = value => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
     const getLegacyEntry = providerId => {
       if (providerId === 'openai' && hasLegacyOpenAI) {
         return this.credentials.openai;
@@ -117,11 +252,17 @@ class CredentialManager {
       return Boolean(
         Object.prototype.hasOwnProperty.call(explicitProviders, providerId)
         || explicitEnabledProviders.includes(providerId)
-        || Object.prototype.hasOwnProperty.call(explicitSelectedModels, providerId),
+        || Object.prototype.hasOwnProperty.call(explicitSelectedModels, providerId)
+        || (useEnvConfig && (
+          envEnabledProviders.includes(providerId)
+          || Object.prototype.hasOwnProperty.call(envProviders, providerId)
+          || Object.prototype.hasOwnProperty.call(envSelectedModels, providerId)
+          || Boolean(this._getProviderEnvironmentConfig(providerId).apiKey)
+        ))
       );
     };
 
-    const inferEnabled = (providerId, providerEntry, legacyEntry) => {
+    const inferEnabled = (providerId, providerEntry, legacyEntry, envEntry) => {
       if (providerEntry && providerEntry.enabled === false) {
         return false;
       }
@@ -134,6 +275,14 @@ class CredentialManager {
         return true;
       }
 
+      if (useEnvConfig && envEnabledProviders.includes(providerId)) {
+        return true;
+      }
+
+      if (envEntry?.apiKey) {
+        return true;
+      }
+
       if (useLegacyInference && legacyEntry) {
         return true;
       }
@@ -141,24 +290,28 @@ class CredentialManager {
       return false;
     };
 
-    const inferModel = (providerId, providerEntry, legacyEntry) => {
-      return getString(providerEntry?.model)
-        || getString(explicitSelectedModels[providerId])
-        || getString(legacyEntry?.model)
+    const inferModel = (providerId, providerEntry, legacyEntry, envEntry) => {
+      return this._getString(providerEntry?.model)
+        || this._getString(explicitSelectedModels[providerId])
+        || this._getString(envSelectedModels[providerId])
+        || this._getString(legacyEntry?.model)
+        || this._getString(envEntry?.model)
         || null;
     };
 
-    const inferBaseUrl = (providerId, providerEntry, legacyEntry) => {
+    const inferBaseUrl = (providerId, providerEntry, legacyEntry, envEntry) => {
       const providerMeta = getProvider(providerId);
-      return getString(providerEntry?.baseUrl)
-        || getString(legacyEntry?.baseUrl)
+      return this._getString(providerEntry?.baseUrl)
+        || this._getString(legacyEntry?.baseUrl)
+        || this._getString(envEntry?.baseUrl)
         || providerMeta?.defaultBaseUrl
         || null;
     };
 
-    const inferApiKey = (providerEntry, legacyEntry) => {
-      return getString(providerEntry?.apiKey)
-        || getString(legacyEntry?.apiKey)
+    const inferApiKey = (providerEntry, legacyEntry, envEntry) => {
+      return this._getString(providerEntry?.apiKey)
+        || this._getString(envEntry?.apiKey)
+        || this._getString(legacyEntry?.apiKey)
         || '';
     };
 
@@ -172,10 +325,13 @@ class CredentialManager {
         ? explicitProviders[providerId]
         : null;
       const legacyEntry = getLegacyEntry(providerId);
-      const enabled = inferEnabled(providerId, providerEntry, legacyEntry);
-      const model = inferModel(providerId, providerEntry, legacyEntry);
-      const baseUrl = inferBaseUrl(providerId, providerEntry, legacyEntry);
-      const apiKey = inferApiKey(providerEntry, legacyEntry);
+      const envEntry = envProviders[providerId] && typeof envProviders[providerId] === 'object'
+        ? envProviders[providerId]
+        : this._getProviderEnvironmentConfig(providerId);
+      const enabled = inferEnabled(providerId, providerEntry, legacyEntry, envEntry);
+      const model = inferModel(providerId, providerEntry, legacyEntry, envEntry);
+      const baseUrl = inferBaseUrl(providerId, providerEntry, legacyEntry, envEntry);
+      const apiKey = inferApiKey(providerEntry, legacyEntry, envEntry);
 
       normalizedProviders[providerId] = {
         enabled,
@@ -195,6 +351,12 @@ class CredentialManager {
       }
     }
 
+    for (const providerId of envEnabledProviders) {
+      if (normalizedProviders[providerId]?.enabled && !normalizedEnabledProviders.includes(providerId)) {
+        normalizedEnabledProviders.push(providerId);
+      }
+    }
+
     for (const provider of supportedProviders) {
       const providerId = provider.id;
       if (normalizedProviders[providerId]?.enabled && !normalizedEnabledProviders.includes(providerId)) {
@@ -203,11 +365,12 @@ class CredentialManager {
     }
 
     const aiConfigExists = Boolean(aiConfig);
-    if (!aiConfigExists && !useLegacyInference && normalizedEnabledProviders.length === 0) {
+    const envConfigExists = Boolean(envConfig);
+    if (!aiConfigExists && !useLegacyInference && !envConfigExists && normalizedEnabledProviders.length === 0) {
       return null;
     }
 
-    const preservedMode = explicitMode;
+    const preservedMode = explicitMode || envConfig?.mode || null;
     const inferredMode = normalizedEnabledProviders.length <= 1
       ? 'single'
       : normalizedEnabledProviders.length === 2
@@ -237,20 +400,33 @@ class CredentialManager {
         && normalizedProviders[aiConfig.primaryProvider]?.enabled
         ? aiConfig.primaryProvider
         : null;
-      primaryProvider = explicitPrimary || inferPrimaryFromEnabled();
+      const envPrimary = isSupportedProvider(envPrimaryProvider)
+        && normalizedProviders[envPrimaryProvider]?.enabled
+        ? envPrimaryProvider
+        : null;
+      primaryProvider = explicitPrimary || envPrimary || inferPrimaryFromEnabled();
 
       const explicitFallback = isSupportedProvider(aiConfig?.fallbackProvider)
         && normalizedProviders[aiConfig.fallbackProvider]?.enabled
         && aiConfig.fallbackProvider !== primaryProvider
         ? aiConfig.fallbackProvider
         : null;
-      fallbackProvider = explicitFallback || inferFallbackFromEnabled(primaryProvider);
+      const envFallback = isSupportedProvider(envFallbackProvider)
+        && normalizedProviders[envFallbackProvider]?.enabled
+        && envFallbackProvider !== primaryProvider
+        ? envFallbackProvider
+        : null;
+      fallbackProvider = explicitFallback || envFallback || inferFallbackFromEnabled(primaryProvider);
     } else {
       const explicitPrimary = isSupportedProvider(aiConfig?.primaryProvider)
         && normalizedProviders[aiConfig.primaryProvider]?.enabled
         ? aiConfig.primaryProvider
         : null;
-      primaryProvider = explicitPrimary || inferPrimaryFromEnabled();
+      const envPrimary = isSupportedProvider(envPrimaryProvider)
+        && normalizedProviders[envPrimaryProvider]?.enabled
+        ? envPrimaryProvider
+        : null;
+      primaryProvider = explicitPrimary || envPrimary || inferPrimaryFromEnabled();
       fallbackProvider = null;
     }
 
@@ -287,13 +463,14 @@ class CredentialManager {
   _getProviderConfigSync(providerId) {
     const aiConfig = this.normalizeAIConfig();
     const providerConfig = aiConfig?.providers?.[providerId];
+    const providerEnvConfig = this._getProviderEnvironmentConfig(providerId);
 
     if (providerConfig) {
       return {
         providerId,
-        apiKey: providerConfig.apiKey || '',
+        apiKey: providerConfig.apiKey || providerEnvConfig.apiKey || '',
         model: providerConfig.model || null,
-        baseUrl: providerConfig.baseUrl || null,
+        baseUrl: providerConfig.baseUrl || providerEnvConfig.baseUrl || null,
         enabled: Boolean(providerConfig.enabled),
       };
     }
@@ -311,10 +488,10 @@ class CredentialManager {
 
     return {
       providerId,
-      apiKey: '',
+      apiKey: providerEnvConfig.apiKey || '',
       model: null,
-      baseUrl: providerMeta.defaultBaseUrl || null,
-      enabled: false,
+      baseUrl: providerEnvConfig.baseUrl || providerMeta.defaultBaseUrl || null,
+      enabled: Boolean(providerEnvConfig.apiKey),
     };
   }
 
@@ -1070,8 +1247,6 @@ class CredentialManager {
     };
 
     this.credentials.ai = credentialsAi;
-    delete this.credentials.openai;
-    delete this.credentials.gemini;
 
     if (selectedProviderConfigs.openai) {
       this.credentials.openai = {

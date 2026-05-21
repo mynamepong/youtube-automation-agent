@@ -5,6 +5,10 @@ const chalk = require('chalk');
 const fs = require('fs').promises;
 const path = require('path');
 const { getEnvKeyForProvider } = require('./utils/llm-provider-registry');
+const {
+  REQUIRED_SETUP_ENV_KEYS,
+  mergeEnvContent,
+} = require('./utils/env-file');
 
 class YouTubeAutomationSetup {
   constructor() {
@@ -20,36 +24,22 @@ class YouTubeAutomationSetup {
     console.log(chalk.gray('This will configure your system for fully automated YouTube content creation.\n'));
 
     try {
-      // Step 1: Create directories
       await this.createDirectories();
-      
-      // Step 2: Initialize database
       await this.initializeDatabase();
-      
-      // Step 3: Run credential setup
       await this.credentialManager.runSetupWizard();
-      
-      // Step 4: Create environment file
       await this.createEnvironmentFile();
-      
-      // Step 5: Install additional dependencies if needed
       await this.installDependencies();
-      
-      // Step 6: Create startup scripts
       await this.createStartupScripts();
-      
-      // Step 7: Final validation
       await this.validateSetup();
-      
+
       console.log(chalk.green.bold('\n🎉 Setup completed successfully!'));
       console.log(chalk.cyan('\n📋 Next steps:'));
       console.log(chalk.white('1. Run: npm start'));
       console.log(chalk.white('2. Visit: http://localhost:3456'));
       console.log(chalk.white('3. Your first video will be generated and scheduled within 24 hours'));
-      
+
       console.log(chalk.gray('\n═'.repeat(60)));
       console.log(chalk.yellow('🤖 Your YouTube channel is now fully automated!'));
-
     } catch (error) {
       console.log(chalk.red.bold('\n❌ Setup failed!'));
       console.log(chalk.red(error.message));
@@ -59,7 +49,7 @@ class YouTubeAutomationSetup {
 
   async createDirectories() {
     console.log(chalk.cyan('\n📁 Creating directory structure...'));
-    
+
     const directories = [
       'config',
       'logs',
@@ -72,7 +62,7 @@ class YouTubeAutomationSetup {
       'data/captions',
       'data/thumbnail-templates',
       'temp/processing',
-      'uploads/thumbnails'
+      'uploads/thumbnails',
     ];
 
     for (const dir of directories) {
@@ -86,75 +76,38 @@ class YouTubeAutomationSetup {
 
   async initializeDatabase() {
     console.log(chalk.cyan('\n🗄️  Initializing database...'));
-    
     await this.database.initialize();
-    
     console.log(chalk.green('✅ Database initialized'));
   }
 
-  async createEnvironmentFile() {
-    console.log(chalk.cyan('\n🔧 Creating environment configuration...'));
-    const aiConfig = await this.credentialManager.getAIConfig();
-    const selectedProviders = aiConfig?.enabledProviders || [];
-    const primaryProvider = aiConfig?.primaryProvider || '';
-    const fallbackProvider = aiConfig?.fallbackProvider || '';
-
-    const resolveModelForProvider = providerId => {
-      if (!aiConfig?.providers?.[providerId]) {
-        return '';
-      }
-
-      return aiConfig.selectedModels?.[providerId]
-        || aiConfig.providers?.[providerId]?.model
-        || '';
-    };
-
-    const resolvePrimaryModel = () => {
-      if (primaryProvider) {
-        return resolveModelForProvider(primaryProvider);
-      }
-
-      for (const providerId of selectedProviders) {
-        const model = resolveModelForProvider(providerId);
-        if (model) {
-          return model;
-        }
-      }
-
-      return '';
-    };
-
-    const envLines = [
+  buildDefaultEnvironmentContent() {
+    return [
       '# YouTube Automation Agent Environment Configuration',
       `# Generated on ${new Date().toISOString()}`,
       '',
       '# AI Provider Configuration',
-      `AI_MODE=${aiConfig?.mode || ''}`,
-      `AI_PROVIDER=${aiConfig?.mode === 'multi' ? 'multi' : (primaryProvider || '')}`,
-      `AI_PRIMARY_PROVIDER=${primaryProvider}`,
-      `AI_FALLBACK_PROVIDER=${fallbackProvider}`,
-      `AI_MODEL=${resolvePrimaryModel()}`,
-      `AI_ENABLED_PROVIDERS=${selectedProviders.join(',')}`,
-    ];
-
-    for (const providerId of selectedProviders) {
-      const providerConfig = aiConfig?.providers?.[providerId];
-      const envKey = getEnvKeyForProvider(providerId);
-      if (envKey && providerConfig?.apiKey) {
-        envLines.push(`${envKey}=${providerConfig.apiKey}`);
-      }
-
-      if (providerId === 'openai_compatible_custom' && providerConfig?.baseUrl) {
-        envLines.push(`CUSTOM_LLM_BASE_URL=${providerConfig.baseUrl}`);
-      }
-    }
-
-    envLines.push(
+      'AI_PROVIDER=',
+      'AI_PRIMARY_PROVIDER=',
+      'AI_FALLBACK_PROVIDER=',
+      'AI_MODEL=',
+      'AI_ENABLED_PROVIDERS=',
+      'OPENAI_API_KEY=',
+      'GEMINI_API_KEY=',
+      'ANTHROPIC_API_KEY=',
+      'DEEPSEEK_API_KEY=',
+      'QWEN_API_KEY=',
+      'CUSTOM_LLM_API_KEY=',
+      'CUSTOM_LLM_BASE_URL=',
       '',
       '# Application Settings',
       'NODE_ENV=production',
       'PORT=3456',
       'LOG_LEVEL=info',
+      '',
+      '# Channel Settings',
+      'CHANNEL_NAME=',
+      'TARGET_AUDIENCE=',
+      'POSTING_FREQUENCY=',
       '',
       '# YouTube Settings',
       'YOUTUBE_REGION=US',
@@ -206,11 +159,77 @@ class YouTubeAutomationSetup {
       'VERBOSE_LOGGING=false',
       'SAVE_SCREENSHOTS=false',
       'SCREENSHOT_PATH=./debug/screenshots',
-    );
+      '',
+    ].join('\n');
+  }
 
-    const envContent = envLines.join('\n');
+  async createEnvironmentFile(envPath = path.join(__dirname, '.env')) {
+    console.log(chalk.cyan('\n🔧 Creating environment configuration...'));
 
-    await fs.writeFile(path.join(__dirname, '.env'), envContent);
+    const aiConfig = await this.credentialManager.getAIConfig();
+    const selectedProviders = Array.isArray(aiConfig?.enabledProviders) ? aiConfig.enabledProviders : [];
+    const primaryProvider = aiConfig?.primaryProvider || '';
+    const fallbackProvider = aiConfig?.fallbackProvider || '';
+    const channelConfig = this.credentialManager.credentials?.channel || {};
+    const existingEnvContent = await fs.readFile(envPath, 'utf8').catch(() => null);
+
+    const resolveModelForProvider = providerId => {
+      if (!aiConfig?.providers?.[providerId]) {
+        return '';
+      }
+
+      return aiConfig.selectedModels?.[providerId]
+        || aiConfig.providers?.[providerId]?.model
+        || '';
+    };
+
+    const resolvePrimaryModel = () => {
+      if (primaryProvider) {
+        return resolveModelForProvider(primaryProvider);
+      }
+
+      for (const providerId of selectedProviders) {
+        const model = resolveModelForProvider(providerId);
+        if (model) {
+          return model;
+        }
+      }
+
+      return '';
+    };
+
+    const envUpdates = {
+      AI_PROVIDER: aiConfig?.mode === 'multi' ? 'multi' : (primaryProvider || selectedProviders[0] || ''),
+      AI_PRIMARY_PROVIDER: primaryProvider,
+      AI_FALLBACK_PROVIDER: fallbackProvider,
+      AI_MODEL: resolvePrimaryModel(),
+      AI_ENABLED_PROVIDERS: selectedProviders.join(','),
+      YOUTUBE_REGION: process.env.YOUTUBE_REGION || 'US',
+      DEFAULT_PRIVACY_STATUS: channelConfig.defaultPrivacy || process.env.DEFAULT_PRIVACY_STATUS || 'public',
+      CHANNEL_NAME: channelConfig.channelName || process.env.CHANNEL_NAME || '',
+      TARGET_AUDIENCE: channelConfig.targetAudience || process.env.TARGET_AUDIENCE || '',
+      POSTING_FREQUENCY: channelConfig.postingFrequency || process.env.POSTING_FREQUENCY || 'daily',
+    };
+
+    for (const providerId of selectedProviders) {
+      const providerConfig = aiConfig?.providers?.[providerId];
+      const envKey = getEnvKeyForProvider(providerId);
+
+      if (envKey && providerConfig?.apiKey) {
+        envUpdates[envKey] = providerConfig.apiKey;
+      }
+
+      if (providerId === 'openai_compatible_custom' && providerConfig?.baseUrl) {
+        envUpdates.CUSTOM_LLM_BASE_URL = providerConfig.baseUrl;
+      }
+    }
+
+    const templateContent = this.buildDefaultEnvironmentContent();
+    const contentToWrite = existingEnvContent
+      ? mergeEnvContent(existingEnvContent, envUpdates, REQUIRED_SETUP_ENV_KEYS)
+      : mergeEnvContent(templateContent, envUpdates, REQUIRED_SETUP_ENV_KEYS);
+
+    await fs.writeFile(envPath, contentToWrite);
     console.log(chalk.green('✅ Environment file created'));
   }
 
@@ -221,12 +240,10 @@ class YouTubeAutomationSetup {
 
   async installDependencies() {
     console.log(chalk.cyan('\n📦 Checking dependencies...'));
-    
+
     try {
-      // Check if package.json exists and dependencies are installed
-      const packagePath = path.join(__dirname, 'package.json');
       const nodeModulesPath = path.join(__dirname, 'node_modules');
-      
+
       try {
         await fs.access(nodeModulesPath);
         console.log(chalk.green('✅ Dependencies already installed'));
@@ -240,23 +257,20 @@ class YouTubeAutomationSetup {
 
   async createStartupScripts() {
     console.log(chalk.cyan('\n🚀 Creating startup scripts...'));
-    
-    // Create Windows batch file
+
     const windowsScript = `@echo off
 echo Starting YouTube Automation Agent...
 node index.js
 pause`;
-    
+
     await fs.writeFile(path.join(__dirname, 'start.bat'), windowsScript);
-    
-    // Create Unix shell script
+
     const unixScript = `#!/bin/bash
 echo "Starting YouTube Automation Agent..."
 node index.js`;
-    
+
     await fs.writeFile(path.join(__dirname, 'start.sh'), unixScript);
-    
-    // Create PM2 ecosystem file for production
+
     const pm2Config = {
       apps: [{
         name: 'youtube-automation-agent',
@@ -267,30 +281,29 @@ node index.js`;
         max_memory_restart: '1G',
         env: {
           NODE_ENV: 'production',
-          PORT: 3456
-        }
-      }]
+          PORT: 3456,
+        },
+      }],
     };
-    
+
     await fs.writeFile(
-      path.join(__dirname, 'ecosystem.config.js'), 
-      `module.exports = ${JSON.stringify(pm2Config, null, 2)};`
+      path.join(__dirname, 'ecosystem.config.js'),
+      `module.exports = ${JSON.stringify(pm2Config, null, 2)};`,
     );
-    
+
     console.log(chalk.green('✅ Startup scripts created'));
   }
 
   async validateSetup() {
     console.log(chalk.cyan('\n🔍 Validating setup...'));
-    
+
     const validation = {
       directories: true,
       database: false,
       credentials: false,
-      environment: false
+      environment: false,
     };
 
-    // Check directories
     try {
       await fs.access(path.join(__dirname, 'data'));
       await fs.access(path.join(__dirname, 'logs'));
@@ -299,18 +312,15 @@ node index.js`;
       validation.directories = false;
     }
 
-    // Check database
     try {
-      const stats = await this.database.getStats();
+      await this.database.getStats();
       validation.database = true;
     } catch (error) {
       validation.database = false;
     }
 
-    // Check credentials
     validation.credentials = await this.credentialManager.validateAll();
 
-    // Check environment
     try {
       await fs.access(path.join(__dirname, '.env'));
       validation.environment = true;
@@ -318,7 +328,6 @@ node index.js`;
       validation.environment = false;
     }
 
-    // Display validation results
     Object.entries(validation).forEach(([component, valid]) => {
       const icon = valid ? '✅' : '❌';
       const color = valid ? chalk.green : chalk.red;
@@ -326,7 +335,7 @@ node index.js`;
     });
 
     const allValid = Object.values(validation).every(Boolean);
-    
+
     if (!allValid) {
       throw new Error('Setup validation failed. Please check the errors above.');
     }
@@ -336,43 +345,41 @@ node index.js`;
 
   async createSampleContent() {
     console.log(chalk.cyan('\n📝 Creating sample content templates...'));
-    
-    // Create sample script template
+
     const sampleScript = {
-      title: "Getting Started with YouTube Automation",
+      title: 'Getting Started with YouTube Automation',
       hook: {
-        type: "question",
-        text: "Have you ever wondered how top YouTubers manage to post consistently?"
+        type: 'question',
+        text: 'Have you ever wondered how top YouTubers manage to post consistently?',
       },
       introduction: {
-        greeting: "Hey everyone, welcome back to the channel!",
+        greeting: 'Hey everyone, welcome back to the channel!',
         topicIntro: "Today, we're diving into YouTube automation.",
-        valueProposition: "By the end of this video, you'll understand how automation can transform your channel."
+        valueProposition: "By the end of this video, you'll understand how automation can transform your channel.",
       },
       mainContent: {
         sections: [
           {
-            title: "What is YouTube Automation?",
-            content: "YouTube automation is the process of using technology to handle repetitive tasks in content creation and channel management."
+            title: 'What is YouTube Automation?',
+            content: 'YouTube automation is the process of using technology to handle repetitive tasks in content creation and channel management.',
           },
           {
-            title: "Benefits of Automation",
-            content: "Automation saves time, ensures consistency, and allows you to focus on strategy rather than execution."
-          }
-        ]
-      }
+            title: 'Benefits of Automation',
+            content: 'Automation saves time, ensures consistency, and allows you to focus on strategy rather than execution.',
+          },
+        ],
+      },
     };
 
     await fs.writeFile(
       path.join(__dirname, 'data', 'sample-script.json'),
-      JSON.stringify(sampleScript, null, 2)
+      JSON.stringify(sampleScript, null, 2),
     );
 
     console.log(chalk.green('✅ Sample content created'));
   }
 }
 
-// Run setup if called directly
 if (require.main === module) {
   const setup = new YouTubeAutomationSetup();
   setup.run().catch(error => {

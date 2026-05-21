@@ -4,6 +4,7 @@ const { createProviderAdapter } = require('./llm-providers');
 const {
   isNonEmptyString,
   isPlainObject,
+  isRecoverableProviderError,
   normalizeStringArray,
   safeParseJson,
   sanitizeProviderError,
@@ -159,6 +160,20 @@ class LLMService {
     }
 
     return toString(aiConfig.selectedModels?.[providerId] || aiConfig.providers?.[providerId]?.model) || null;
+  }
+
+  _buildAttemptError(provider, model, error) {
+    const sanitized = sanitizeProviderError(error);
+    const recoverable = isRecoverableProviderError(error);
+    return {
+      ok: false,
+      provider,
+      model: model || null,
+      recoverable,
+      code: sanitized.status ? `HTTP_${sanitized.status}` : (sanitized.code || 'ADAPTER_THROWN_ERROR'),
+      message: this._sanitizeMessage(error) || 'LLM adapter threw an error.',
+      raw: sanitized,
+    };
   }
 
   getActiveProvider() {
@@ -353,6 +368,24 @@ class LLMService {
         break;
       }
 
+      const attemptModel = attemptProvider === resolved.provider
+        ? resolved.model
+        : toString(providerConfig.model) || this._getConfiguredDefaultModel(resolved.aiConfig, attemptProvider) || null;
+
+      if (!attemptModel) {
+        lastError = {
+          ok: false,
+          provider: attemptProvider,
+          model: null,
+          recoverable: false,
+          code: 'MISSING_MODEL',
+          message: `Provider ${attemptProvider} is missing a model.`,
+          raw: null,
+        };
+        this._logAttemptFailure({ provider: attemptProvider, model: null, task: resolved.task, error: lastError });
+        break;
+      }
+
       const adapter = this._getAdapter(attemptProvider, providerConfig);
       if (!adapter || typeof adapter.generateText !== 'function') {
         lastError = {
@@ -368,16 +401,21 @@ class LLMService {
         break;
       }
 
-      const attempt = await adapter.generateText({
-        prompt,
-        systemPrompt,
-        task: resolved.task,
-        temperature,
-        maxOutputTokens,
-        provider: attemptProvider,
-        model: attemptProvider === resolved.provider ? resolved.model : (toString(providerConfig.model) || resolved.model),
-        jsonMode,
-      });
+      let attempt;
+      try {
+        attempt = await adapter.generateText({
+          prompt,
+          systemPrompt,
+          task: resolved.task,
+          temperature,
+          maxOutputTokens,
+          provider: attemptProvider,
+          model: attemptModel,
+          jsonMode,
+        });
+      } catch (error) {
+        attempt = this._buildAttemptError(attemptProvider, attemptModel, error);
+      }
 
       if (attempt?.ok) {
         this.activeProvider = attempt.provider;

@@ -237,6 +237,35 @@ function createAiConfig({
   };
 }
 
+function createFallbackConfig({
+  primaryModel = 'primary-model',
+  fallbackModel = 'fallback-model',
+  includeFallbackModel = true,
+} = {}) {
+  return {
+    mode: 'fallback',
+    primaryProvider: 'openai',
+    fallbackProvider: 'gemini',
+    enabledProviders: ['openai', 'gemini'],
+    selectedModels: {
+      openai: primaryModel,
+      ...(includeFallbackModel ? { gemini: fallbackModel } : {}),
+    },
+    providers: {
+      openai: {
+        enabled: true,
+        apiKey: 'sk-openai-test',
+        model: primaryModel,
+      },
+      gemini: {
+        enabled: true,
+        apiKey: 'gemini-test',
+        model: includeFallbackModel ? fallbackModel : null,
+      },
+    },
+  };
+}
+
 function createService(aiConfig, adapterOverrides = {}, logger = createCaptureLogger()) {
   const credentials = { ai: aiConfig };
   const service = new LLMService(credentials, {
@@ -331,6 +360,106 @@ async function testFallbackModeRetry() {
   assert.equal(calls[1].provider, 'gemini');
 }
 
+async function testFallbackProviderUsesOwnModel() {
+  const calls = [];
+  const { service } = createService(createFallbackConfig({
+    primaryModel: 'primary-model',
+    fallbackModel: 'fallback-model',
+  }), {
+    openai: {
+      async generateText(request) {
+        calls.push({ provider: 'openai', request });
+        return {
+          ok: false,
+          provider: 'openai',
+          model: 'primary-model',
+          recoverable: true,
+          code: 'HTTP_503',
+          message: 'Temporary outage',
+          raw: {},
+        };
+      },
+    },
+    gemini: {
+      async generateText(request) {
+        calls.push({ provider: 'gemini', request });
+        return {
+          ok: true,
+          text: 'fallback response',
+          json: null,
+          provider: 'gemini',
+          model: request.model,
+          usage: { total_tokens: 3 },
+          raw: {},
+        };
+      },
+    },
+  });
+
+  await service.initialize();
+  const result = await service.generateText({
+    task: 'seo',
+    prompt: 'Optimize the metadata',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.provider, 'gemini');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].provider, 'openai');
+  assert.equal(calls[1].provider, 'gemini');
+  assert.equal(calls[1].request.model, 'fallback-model');
+  assert.notEqual(calls[1].request.model, 'primary-model');
+}
+
+async function testFallbackProviderMissingModelReturnsMissingModel() {
+  const calls = [];
+  const { service } = createService(createFallbackConfig({
+    primaryModel: 'primary-model',
+    includeFallbackModel: false,
+  }), {
+    openai: {
+      async generateText(request) {
+        calls.push({ provider: 'openai', request });
+        return {
+          ok: false,
+          provider: 'openai',
+          model: 'primary-model',
+          recoverable: true,
+          code: 'HTTP_503',
+          message: 'Temporary outage',
+          raw: {},
+        };
+      },
+    },
+    gemini: {
+      async generateText(request) {
+        calls.push({ provider: 'gemini', request });
+        return {
+          ok: true,
+          text: 'should not be called',
+          json: null,
+          provider: 'gemini',
+          model: 'fallback-model',
+          usage: null,
+          raw: {},
+        };
+      },
+    },
+  });
+
+  await service.initialize();
+  const result = await service.generateText({
+    task: 'seo',
+    prompt: 'Optimize the metadata',
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'MISSING_MODEL');
+  assert.equal(result.provider, 'gemini');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].provider, 'openai');
+}
+
 async function testFallbackModeNoRetryOnNonRecoverable() {
   const calls = [];
   const { service } = createService(createAiConfig({
@@ -377,6 +506,115 @@ async function testFallbackModeNoRetryOnNonRecoverable() {
   assert.equal(result.ok, false);
   assert.equal(result.provider, 'openai');
   assert.equal(result.code, 'INVALID_REQUEST');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].provider, 'openai');
+}
+
+async function testRecoverableThrownErrorRetriesFallback() {
+  const calls = [];
+  const { service } = createService(createFallbackConfig({
+    primaryModel: 'primary-model',
+    fallbackModel: 'fallback-model',
+  }), {
+    openai: {
+      async generateText(request) {
+        calls.push({ provider: 'openai', request });
+        throw {
+          code: 'ECONNRESET',
+          message: 'socket hang up',
+          response: {
+            status: 503,
+            statusText: 'Service Unavailable',
+            data: {
+              message: 'temporary failure',
+              headers: {
+                authorization: 'sk-secret',
+              },
+            },
+          },
+          config: {
+            headers: {
+              authorization: 'sk-secret',
+            },
+          },
+        };
+      },
+    },
+    gemini: {
+      async generateText(request) {
+        calls.push({ provider: 'gemini', request });
+        return {
+          ok: true,
+          text: 'recovered via fallback',
+          json: null,
+          provider: 'gemini',
+          model: request.model,
+          usage: {},
+          raw: {},
+        };
+      },
+    },
+  });
+
+  await service.initialize();
+  const result = await service.generateText({
+    task: 'script',
+    prompt: 'Write a script',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.provider, 'gemini');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].request.model, 'fallback-model');
+}
+
+async function testNonRecoverableThrownErrorDoesNotRetry() {
+  const calls = [];
+  const { service } = createService(createFallbackConfig({
+    primaryModel: 'primary-model',
+    fallbackModel: 'fallback-model',
+  }), {
+    openai: {
+      async generateText(request) {
+        calls.push({ provider: 'openai', request });
+        throw {
+          code: 'INVALID_REQUEST',
+          message: 'bad request',
+          response: {
+            status: 400,
+            statusText: 'Bad Request',
+            data: {
+              message: 'bad request',
+            },
+          },
+        };
+      },
+    },
+    gemini: {
+      async generateText(request) {
+        calls.push({ provider: 'gemini', request });
+        return {
+          ok: true,
+          text: 'should not retry',
+          json: null,
+          provider: 'gemini',
+          model: request.model,
+          usage: {},
+          raw: {},
+        };
+      },
+    },
+  });
+
+  await service.initialize();
+  const result = await service.generateText({
+    task: 'script',
+    prompt: 'Write a script',
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.provider, 'openai');
+  assert.equal(result.code, 'HTTP_400');
   assert.equal(calls.length, 1);
   assert.equal(calls[0].provider, 'openai');
 }
@@ -858,11 +1096,49 @@ async function testThumbnailTemplateFallback() {
   assert.equal(db.savedThumbnail.path, '/tmp/test-thumbnail.png');
 }
 
+async function testAgentTemplateFallbackAfterAdapterThrow() {
+  const db = createDbStub();
+  const service = createService(createAiConfig({
+    mode: 'single',
+    primaryProvider: 'openai',
+    providerModel: 'script-model',
+  }), {
+    openai: {
+      async generateText() {
+        throw {
+          code: 'INVALID_REQUEST',
+          message: 'bad request with prompt text',
+          response: {
+            status: 400,
+            data: {
+              message: 'bad request',
+            },
+          },
+        };
+      },
+    },
+  }).service;
+
+  await service.initialize();
+
+  const agent = new ScriptWriterAgent(db, {}, service);
+  agent.logger = createCaptureLogger();
+
+  const script = await agent.generateScript(baseStrategy());
+
+  assert.equal(script.metadata.generationMode, 'template');
+  assert.equal(db.savedScript.metadata.generationMode, 'template');
+}
+
 async function main() {
   const tests = [
     testSingleModeProviderSelection,
     testFallbackModeRetry,
+    testFallbackProviderUsesOwnModel,
+    testFallbackProviderMissingModelReturnsMissingModel,
     testFallbackModeNoRetryOnNonRecoverable,
+    testRecoverableThrownErrorRetriesFallback,
+    testNonRecoverableThrownErrorDoesNotRetry,
     testMultiModeExplicitProviderSelection,
     testMultiModeTaskMapSelection,
     testMultiModeNoProviderError,
@@ -878,6 +1154,7 @@ async function main() {
     testScriptWriterTemplateFallback,
     testSeoTemplateFallback,
     testThumbnailTemplateFallback,
+    testAgentTemplateFallbackAfterAdapterThrow,
   ];
 
   let passed = 0;
@@ -896,4 +1173,3 @@ if (require.main === module) {
     process.exit(1);
   });
 }
-

@@ -3,6 +3,7 @@ const path = require('path');
 const { Logger } = require('./utils/logger');
 const { Database } = require('./database/db');
 const { CredentialManager } = require('./utils/credential-manager');
+const { LLMService } = require('./utils/llm-service');
 const { ContentStrategyAgent } = require('./agents/content-strategy-agent');
 const { ScriptWriterAgent } = require('./agents/script-writer-agent');
 const { ThumbnailDesignerAgent } = require('./agents/thumbnail-designer-agent');
@@ -18,6 +19,7 @@ class YouTubeAutomationAgent {
     this.logger = new Logger('MainAgent');
     this.db = null;
     this.credentials = null;
+    this.llmService = null;
     this.agents = {};
     this.app = express();
     this.isInitialized = false;
@@ -43,6 +45,8 @@ class YouTubeAutomationAgent {
         console.log(chalk.yellow('Run: npm run credentials:setup'));
         return false;
       }
+
+      await this.initializeLLMService();
       
       // Initialize agents
       this.logger.info('Initializing agents...');
@@ -66,12 +70,33 @@ class YouTubeAutomationAgent {
     }
   }
 
+  async initializeLLMService() {
+    try {
+      this.llmService = new LLMService(this.credentials, {
+        logger: new Logger('LLMService'),
+      });
+
+      const initialized = await this.llmService.initialize();
+      if (!initialized) {
+        this.llmService = null;
+        this.logger.warn('LLM service unavailable; agents will use template fallbacks only.');
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      this.llmService = null;
+      this.logger.warn(`LLM service unavailable; agents will use template fallbacks only. ${error.message}`);
+      return false;
+    }
+  }
+
   async initializeAgents() {
     this.agents = {
       strategy: new ContentStrategyAgent(this.db, this.credentials),
-      scriptWriter: new ScriptWriterAgent(this.db, this.credentials),
-      thumbnailDesigner: new ThumbnailDesignerAgent(this.db, this.credentials),
-      seoOptimizer: new SEOOptimizerAgent(this.db, this.credentials),
+      scriptWriter: new ScriptWriterAgent(this.db, this.credentials, this.llmService),
+      thumbnailDesigner: new ThumbnailDesignerAgent(this.db, this.credentials, this.llmService),
+      seoOptimizer: new SEOOptimizerAgent(this.db, this.credentials, this.llmService),
       production: new ProductionManagementAgent(this.db, this.credentials),
       publishing: new PublishingSchedulingAgent(this.db, this.credentials),
       analytics: new AnalyticsOptimizationAgent(this.db, this.credentials)

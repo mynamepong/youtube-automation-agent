@@ -1,9 +1,11 @@
 const { Logger } = require('../utils/logger');
+const { normalizeSeoPayload } = require('../utils/llm-validation');
 
 class SEOOptimizerAgent {
-  constructor(db, credentials) {
+  constructor(db, credentials, llmService = null) {
     this.db = db;
     this.credentials = credentials;
+    this.llmService = llmService || null;
     this.logger = new Logger('SEOOptimizer');
     this.keywordDatabase = new Map();
   }
@@ -28,55 +30,138 @@ class SEOOptimizerAgent {
   async optimize(script, strategy) {
     try {
       this.logger.info(`Optimizing SEO for: ${script.title}`);
-      
-      // Generate optimized title
-      const title = await this.optimizeTitle(script.title, strategy);
-      
-      // Generate description
-      const description = await this.generateDescription(script, strategy);
-      
-      // Extract and optimize tags
-      const tags = await this.generateTags(script, strategy);
-      
-      // Generate hashtags
-      const hashtags = await this.generateHashtags(strategy);
-      
-      // Create chapters/timestamps
-      const chapters = await this.generateChapters(script);
-      
-      // Generate end screen elements
-      const endScreen = await this.generateEndScreenStrategy();
-      
-      // Calculate SEO score
-      const seoScore = await this.calculateSEOScore(title, description, tags);
-      
-      const seoData = {
-        title,
-        description,
-        tags,
-        hashtags,
-        chapters,
-        endScreen,
-        seoScore,
-        metadata: {
-          primaryKeyword: strategy.keywords[0],
-          secondaryKeywords: strategy.keywords.slice(1, 5),
-          targetLength: this.calculateOptimalLength(strategy.contentType),
-          language: 'en',
-          category: this.selectCategory(strategy)
-        },
-        createdAt: new Date().toISOString()
-      };
+      const llmSeoData = await this.generateLLMSEOData(script, strategy);
+      const seoData = llmSeoData || await this.generateTemplateSEOData(script, strategy);
       
       // Save to database
       await this.db.saveSEOData(seoData);
       
-      this.logger.info(`SEO optimization complete. Score: ${seoScore}/100`);
+      this.logger.info(`SEO optimization complete. Score: ${seoData.seoScore}/100`);
       return seoData;
     } catch (error) {
       this.logger.error('Failed to optimize SEO:', error);
       throw error;
     }
+  }
+
+  buildLLMSEOPrompt(script, strategy) {
+    return [
+      `You are a YouTube SEO specialist.`,
+      `Create SEO metadata for the following video.`,
+      `Title context: ${script.title}`,
+      `Topic: ${strategy.topic}`,
+      `Angle: ${strategy.angle || 'Engaging and useful'}`,
+      `Target audience: ${strategy.targetAudience || 'general viewers'}`,
+      `Primary keywords: ${Array.isArray(strategy.keywords) ? strategy.keywords.join(', ') : ''}`,
+      `Return JSON with title, description, tags, hashtags, chapters, and optionally endScreen.`,
+      `title must be optimized for YouTube and under 100 characters.`,
+      `tags and hashtags must be arrays of strings.`,
+      `chapters must be an array of { time, title } objects.`,
+    ].join('\n');
+  }
+
+  async generateLLMSEOData(script, strategy) {
+    if (!this.llmService || typeof this.llmService.generateJSON !== 'function') {
+      return null;
+    }
+
+    try {
+      const result = await this.llmService.generateJSON({
+        task: 'seo',
+        prompt: this.buildLLMSEOPrompt(script, strategy),
+        systemPrompt: 'Return only valid JSON for YouTube SEO metadata.',
+        schema: payload => Boolean(normalizeSeoPayload(payload)),
+        temperature: 0.4,
+        maxOutputTokens: 2500,
+      });
+
+      if (!result || !result.ok || !result.json) {
+        return null;
+      }
+
+      const normalized = normalizeSeoPayload(result.json);
+      if (!normalized) {
+        return null;
+      }
+
+      const endScreen = normalized.endScreen && typeof normalized.endScreen === 'object'
+        ? normalized.endScreen
+        : await this.generateEndScreenStrategy();
+
+      const seoScore = await this.calculateSEOScore(normalized.title, normalized.description, normalized.tags);
+
+      const keywords = Array.isArray(strategy.keywords) ? strategy.keywords : [];
+
+      return {
+        title: normalized.title,
+        description: normalized.description,
+        tags: normalized.tags,
+        hashtags: normalized.hashtags,
+        chapters: normalized.chapters,
+        endScreen,
+        seoScore,
+        metadata: {
+          primaryKeyword: keywords[0] || '',
+          secondaryKeywords: keywords.slice(1, 5),
+          targetLength: this.calculateOptimalLength(strategy.contentType),
+          language: 'en',
+          category: this.selectCategory(strategy),
+          generatedBy: {
+            provider: result.provider,
+            model: result.model,
+          },
+          generationMode: 'llm',
+        },
+        createdAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      this.logger.warn(`LLM SEO generation failed; using template path: ${error.message}`);
+      return null;
+    }
+  }
+
+  async generateTemplateSEOData(script, strategy) {
+    const keywords = Array.isArray(strategy.keywords) ? strategy.keywords : [];
+    
+    // Generate optimized title
+    const title = await this.optimizeTitle(script.title, strategy);
+    
+    // Generate description
+    const description = await this.generateDescription(script, strategy);
+    
+    // Extract and optimize tags
+    const tags = await this.generateTags(script, strategy);
+    
+    // Generate hashtags
+    const hashtags = await this.generateHashtags(strategy);
+    
+    // Create chapters/timestamps
+    const chapters = await this.generateChapters(script);
+    
+    // Generate end screen elements
+    const endScreen = await this.generateEndScreenStrategy();
+    
+    // Calculate SEO score
+    const seoScore = await this.calculateSEOScore(title, description, tags);
+    
+    return {
+      title,
+      description,
+      tags,
+      hashtags,
+      chapters,
+      endScreen,
+      seoScore,
+      metadata: {
+        primaryKeyword: keywords[0] || '',
+        secondaryKeywords: keywords.slice(1, 5),
+        targetLength: this.calculateOptimalLength(strategy.contentType),
+        language: 'en',
+        category: this.selectCategory(strategy),
+        generationMode: 'template',
+      },
+      createdAt: new Date().toISOString()
+    };
   }
 
   async optimizeTitle(originalTitle, strategy) {
@@ -101,7 +186,7 @@ class SEOOptimizerAgent {
     }
     
     // Ensure primary keyword is in title
-    const primaryKeyword = strategy.keywords[0];
+    const primaryKeyword = Array.isArray(strategy.keywords) ? strategy.keywords[0] : null;
     if (primaryKeyword && !optimizedTitle.toLowerCase().includes(primaryKeyword.toLowerCase())) {
       optimizedTitle = `${optimizedTitle} - ${primaryKeyword}`;
     }
@@ -132,6 +217,7 @@ class SEOOptimizerAgent {
     // YouTube description limit: 5000 characters, first 125 shown in search
     
     let description = '';
+    const keywords = Array.isArray(strategy.keywords) ? strategy.keywords : [];
     
     // First 125 characters - most important for SEO
     const hook = `${script.title} - In this video, you'll discover ${strategy.angle.toLowerCase()}.`;
@@ -165,7 +251,7 @@ class SEOOptimizerAgent {
     // Keywords paragraph (SEO optimized)
     description += '📝 ABOUT THIS VIDEO:\n';
     description += `This comprehensive guide on ${strategy.topic} covers everything you need to know. `;
-    description += `Whether you're a beginner or advanced, you'll find valuable insights about ${strategy.keywords.slice(0, 3).join(', ')}. `;
+    description += `Whether you're a beginner or advanced, you'll find valuable insights about ${keywords.slice(0, 3).join(', ')}. `;
     description += `Perfect for ${strategy.targetAudience}.\n\n`;
     
     // Links section
@@ -212,9 +298,10 @@ class SEOOptimizerAgent {
 
   async generateTags(script, strategy) {
     const tags = new Set();
+    const keywords = Array.isArray(strategy.keywords) ? strategy.keywords : [];
     
     // Add primary keywords
-    strategy.keywords.forEach(keyword => tags.add(keyword));
+    keywords.forEach(keyword => tags.add(keyword));
     
     // Add topic variations
     const topic = strategy.topic.toLowerCase();
@@ -331,15 +418,16 @@ class SEOOptimizerAgent {
   }
 
   prioritizeTags(tags, strategy) {
+    const keywords = Array.isArray(strategy.keywords) ? strategy.keywords : [];
     // Score and sort tags by importance
     const scoredTags = tags.map(tag => {
       let score = 0;
       
       // Primary keyword gets highest score
-      if (tag === strategy.keywords[0]) score += 10;
+      if (tag === keywords[0]) score += 10;
       
       // Other strategy keywords
-      if (strategy.keywords.includes(tag)) score += 5;
+      if (keywords.includes(tag)) score += 5;
       
       // Contains topic
       if (tag.includes(strategy.topic.toLowerCase())) score += 3;

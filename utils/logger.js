@@ -1,6 +1,31 @@
-const winston = require('winston');
 const path = require('path');
-const chalk = require('chalk');
+
+let winston = null;
+try {
+  winston = require('winston');
+} catch (error) {
+  winston = null;
+}
+
+let chalk = null;
+try {
+  chalk = require('chalk');
+} catch (error) {
+  const identity = value => value;
+  identity.bold = identity;
+  identity.dim = identity;
+  identity.italic = identity;
+  identity.gray = identity;
+  identity.red = identity;
+  identity.green = identity;
+  identity.yellow = identity;
+  identity.blue = identity;
+  identity.cyan = identity;
+  identity.white = identity;
+  identity.magenta = identity;
+  identity.cyanBright = identity;
+  chalk = identity;
+}
 
 class Logger {
   constructor(component = 'System') {
@@ -9,6 +34,10 @@ class Logger {
   }
 
   createWinstonLogger() {
+    if (!winston) {
+      return this.createFallbackLogger();
+    }
+
     const logDir = path.join(__dirname, '..', 'logs');
     
     return winston.createLogger({
@@ -43,6 +72,16 @@ class Logger {
         })
       ]
     });
+  }
+
+  createFallbackLogger() {
+    const noop = () => {};
+    return {
+      info: noop,
+      warn: noop,
+      error: noop,
+      debug: noop,
+    };
   }
 
   info(message, ...args) {

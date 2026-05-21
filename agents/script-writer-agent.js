@@ -1,9 +1,11 @@
 const { Logger } = require('../utils/logger');
+const { normalizeScriptPayload } = require('../utils/llm-validation');
 
 class ScriptWriterAgent {
-  constructor(db, credentials) {
+  constructor(db, credentials, llmService = null) {
     this.db = db;
     this.credentials = credentials;
+    this.llmService = llmService || null;
     this.logger = new Logger('ScriptWriter');
     this.templates = this.loadTemplates();
   }
@@ -48,36 +50,9 @@ class ScriptWriterAgent {
       this.logger.info(`Generating script for: ${strategy.topic}`);
       
       const template = this.templates[strategy.contentType.toLowerCase()] || this.templates.explainer;
-      
-      // Generate script components
-      const hook = await this.generateHook(strategy);
-      const introduction = await this.generateIntroduction(strategy);
-      const mainContent = await this.generateMainContent(strategy, template);
-      const conclusion = await this.generateConclusion(strategy);
-      const cta = await this.generateCTA(strategy);
+      const llmScript = await this.generateLLMScript(strategy, template);
+      const script = llmScript || await this.generateTemplateScript(strategy, template);
 
-      // Assemble complete script
-      const script = {
-        title: await this.generateTitle(strategy),
-        hook,
-        introduction,
-        mainContent,
-        conclusion,
-        callToAction: cta,
-        duration: this.estimateDuration(mainContent),
-        tone: template.tone,
-        pacing: template.pacing,
-        keywords: strategy.keywords,
-        metadata: {
-          strategy: strategy,
-          generatedAt: new Date().toISOString(),
-          version: '1.0'
-        }
-      };
-
-      // Format for readability
-      script.fullScript = this.formatFullScript(script);
-      
       // Save to database
       await this.db.saveScript(script);
       
@@ -87,6 +62,103 @@ class ScriptWriterAgent {
       this.logger.error('Failed to generate script:', error);
       throw error;
     }
+  }
+
+  buildLLMScriptPrompt(strategy, template) {
+    const contentType = strategy.contentType || 'Explainer';
+    const keywords = Array.isArray(strategy.keywords) ? strategy.keywords.join(', ') : '';
+
+    return [
+      `You are a YouTube script writer.`,
+      `Write a complete ${contentType.toLowerCase()} script for the topic "${strategy.topic}".`,
+      `Angle: ${strategy.angle || 'Engaging and useful'}.`,
+      `Target audience: ${strategy.targetAudience || 'general viewers'}.`,
+      `Tone: ${template.tone}.`,
+      `Pacing: ${template.pacing}.`,
+      `Keywords: ${keywords}.`,
+      `Return JSON with these keys: title, hook, introduction, mainContent, conclusion, callToAction, fullScript, duration, tone, pacing, keywords, metadata.`,
+      `mainContent must include a sections array with the structure needed for the existing formatter.`,
+      `fullScript must be the complete narration text in reading order.`,
+      `duration must be a timestamp string like 12:34.`,
+      `Keywords should be an array of strings.`,
+    ].join('\n');
+  }
+
+  async generateLLMScript(strategy, template) {
+    if (!this.llmService || typeof this.llmService.generateJSON !== 'function') {
+      return null;
+    }
+
+    try {
+      const result = await this.llmService.generateJSON({
+        task: 'script',
+        prompt: this.buildLLMScriptPrompt(strategy, template),
+        systemPrompt: 'Return only valid JSON that matches the requested script structure.',
+        schema: payload => Boolean(normalizeScriptPayload(payload)),
+        temperature: 0.7,
+        maxOutputTokens: 4000,
+      });
+
+      if (!result || !result.ok || !result.json) {
+        return null;
+      }
+
+      const normalized = normalizeScriptPayload(result.json);
+      if (!normalized) {
+        return null;
+      }
+
+      normalized.metadata = {
+        ...(normalized.metadata || {}),
+        strategy,
+        generatedAt: new Date().toISOString(),
+        version: '1.0',
+        generatedBy: {
+          provider: result.provider,
+          model: result.model,
+        },
+        generationMode: 'llm',
+      };
+      normalized.fullScript = normalized.fullScript || this.formatFullScript(normalized);
+      return normalized;
+    } catch (error) {
+      this.logger.warn(`LLM script generation failed; using template path: ${error.message}`);
+      return null;
+    }
+  }
+
+  async generateTemplateScript(strategy, template) {
+    // Generate script components
+    const hook = await this.generateHook(strategy);
+    const introduction = await this.generateIntroduction(strategy);
+    const mainContent = await this.generateMainContent(strategy, template);
+    const conclusion = await this.generateConclusion(strategy);
+    const cta = await this.generateCTA(strategy);
+
+    // Assemble complete script
+    const script = {
+      title: await this.generateTitle(strategy),
+      hook,
+      introduction,
+      mainContent,
+      conclusion,
+      callToAction: cta,
+      duration: this.estimateDuration(mainContent),
+      tone: template.tone,
+      pacing: template.pacing,
+      keywords: Array.isArray(strategy.keywords) ? strategy.keywords : [],
+      metadata: {
+        strategy: strategy,
+        generatedAt: new Date().toISOString(),
+        version: '1.0',
+        generationMode: 'template'
+      }
+    };
+
+    // Format for readability
+    script.fullScript = this.formatFullScript(script);
+
+    return script;
   }
 
   async generateTitle(strategy) {

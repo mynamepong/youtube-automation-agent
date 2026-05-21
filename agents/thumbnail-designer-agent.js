@@ -1,12 +1,13 @@
-const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs').promises;
 const { Logger } = require('../utils/logger');
+const { normalizeThumbnailPayload } = require('../utils/llm-validation');
 
 class ThumbnailDesignerAgent {
-  constructor(db, credentials) {
+  constructor(db, credentials, llmService = null) {
     this.db = db;
     this.credentials = credentials;
+    this.llmService = llmService || null;
     this.logger = new Logger('ThumbnailDesigner');
     this.templatesPath = path.join(__dirname, '..', 'data', 'thumbnail-templates');
   }
@@ -26,15 +27,27 @@ class ThumbnailDesignerAgent {
     }
   }
 
+  getSharp() {
+    try {
+      return require('sharp');
+    } catch (error) {
+      throw new Error('sharp is not installed.');
+    }
+  }
+
   async generateThumbnail(script) {
     try {
       this.logger.info(`Generating thumbnail for: ${script.title}`);
       
       // Generate thumbnail concept
-      const concept = await this.generateConcept(script);
+      const llmThumbnail = await this.generateLLMThumbnail(script);
+      const concept = llmThumbnail?.concept || await this.generateConcept(script);
+      if (!llmThumbnail) {
+        concept.generationMode = 'template';
+      }
       
       // Create thumbnail prompt for AI generation
-      const prompt = await this.createPrompt(concept);
+      const prompt = llmThumbnail?.prompt || await this.createPrompt(concept);
       
       // Generate base thumbnail
       const thumbnailPath = await this.createThumbnail(concept);
@@ -62,6 +75,56 @@ class ThumbnailDesignerAgent {
     } catch (error) {
       this.logger.error('Failed to generate thumbnail:', error);
       throw error;
+    }
+  }
+
+  buildLLMThumbnailPrompt(script) {
+    const topic = script.metadata?.strategy?.topic || script.title || 'the topic';
+    const contentType = script.metadata?.strategy?.contentType || 'Explainer';
+
+    return [
+      `You are a YouTube thumbnail strategist.`,
+      `Create a thumbnail concept for a ${contentType.toLowerCase()} video about "${topic}".`,
+      `Return JSON with concept and prompt.`,
+      `The concept must include title, style, primaryText, secondaryText, elements, colors, emotion, composition, and effects.`,
+      `The prompt should be a single production-ready thumbnail prompt.`,
+    ].join('\n');
+  }
+
+  async generateLLMThumbnail(script) {
+    if (!this.llmService || typeof this.llmService.generateJSON !== 'function') {
+      return null;
+    }
+
+    try {
+      const result = await this.llmService.generateJSON({
+        task: 'thumbnail',
+        prompt: this.buildLLMThumbnailPrompt(script),
+        systemPrompt: 'Return only valid JSON for a YouTube thumbnail concept and prompt.',
+        schema: payload => Boolean(normalizeThumbnailPayload(payload)),
+        temperature: 0.7,
+        maxOutputTokens: 1500,
+      });
+
+      if (!result || !result.ok || !result.json) {
+        return null;
+      }
+
+      const normalized = normalizeThumbnailPayload(result.json);
+      if (!normalized) {
+        return null;
+      }
+
+      normalized.concept.generatedBy = {
+        provider: result.provider,
+        model: result.model,
+      };
+      normalized.concept.generationMode = 'llm';
+
+      return normalized;
+    } catch (error) {
+      this.logger.warn(`LLM thumbnail generation failed; using template path: ${error.message}`);
+      return null;
     }
   }
 
@@ -205,6 +268,7 @@ class ThumbnailDesignerAgent {
 
   async createThumbnail(concept) {
     // Create a base thumbnail using Sharp
+    const sharp = this.getSharp();
     const width = 1280;
     const height = 720;
     
@@ -251,6 +315,7 @@ class ThumbnailDesignerAgent {
   }
 
   async addTextOverlay(imagePath, concept) {
+    const sharp = this.getSharp();
     const outputPath = path.join(__dirname, '..', 'uploads', 'thumbnails', `thumbnail_final_${Date.now()}.png`);
     
     // Create text overlay SVG
@@ -301,6 +366,7 @@ class ThumbnailDesignerAgent {
   }
 
   async optimizeForYouTube(imagePath) {
+    const sharp = this.getSharp();
     const outputPath = path.join(__dirname, '..', 'uploads', 'thumbnails', `thumbnail_optimized_${Date.now()}.jpg`);
     
     // YouTube optimization: JPEG format, proper compression

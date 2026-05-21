@@ -110,26 +110,43 @@ class CredentialManager {
       .split(',')
       .map(providerId => providerId.trim())
       .filter(providerId => isSupportedProvider(providerId));
-    const providerIdsFromSecrets = supportedProviders
-      .map(provider => provider.id)
-      .filter(providerId => Boolean(this._getProviderEnvironmentConfig(providerId).apiKey));
-    const envPrimaryProvider = this._getEnvString('AI_PRIMARY_PROVIDER') || this._getEnvString('AI_PROVIDER');
-    const envFallbackProvider = this._getEnvString('AI_FALLBACK_PROVIDER');
+    const envPrimaryProvider = isSupportedProvider(this._getEnvString('AI_PRIMARY_PROVIDER'))
+      ? this._getEnvString('AI_PRIMARY_PROVIDER')
+      : null;
+    const envFallbackProvider = isSupportedProvider(this._getEnvString('AI_FALLBACK_PROVIDER'))
+      ? this._getEnvString('AI_FALLBACK_PROVIDER')
+      : null;
+    const envMode = this._getEnvString('AI_MODE');
+    const legacyMode = this._getEnvString('AI_PROVIDER');
     const envModel = this._getEnvString('AI_MODEL');
+    const mode = ['single', 'fallback', 'multi'].includes(envMode)
+      ? envMode
+      : ['single', 'fallback', 'multi'].includes(legacyMode)
+        ? legacyMode
+        : null;
     const selectedProviderIds = [];
+    const shouldInferFromSecrets = envEnabledProviders.length === 0 && !envPrimaryProvider && !envFallbackProvider;
 
     for (const providerId of [
       ...envEnabledProviders,
-      ...providerIdsFromSecrets,
-      ...(isSupportedProvider(envPrimaryProvider) ? [envPrimaryProvider] : []),
-      ...(isSupportedProvider(envFallbackProvider) ? [envFallbackProvider] : []),
+      ...(envPrimaryProvider ? [envPrimaryProvider] : []),
+      ...(envFallbackProvider ? [envFallbackProvider] : []),
     ]) {
       if (providerId && !selectedProviderIds.includes(providerId)) {
         selectedProviderIds.push(providerId);
       }
     }
 
-    if (selectedProviderIds.length === 0 && !envModel && !envPrimaryProvider && !envFallbackProvider) {
+    if (shouldInferFromSecrets) {
+      for (const provider of supportedProviders) {
+        const providerId = provider.id;
+        if (this._getProviderEnvironmentConfig(providerId).apiKey && !selectedProviderIds.includes(providerId)) {
+          selectedProviderIds.push(providerId);
+        }
+      }
+    }
+
+    if (selectedProviderIds.length === 0 && !mode) {
       return null;
     }
 
@@ -146,16 +163,6 @@ class CredentialManager {
       };
     }
 
-    let mode = 'single';
-    if (selectedProviderIds.length >= 3 || this._getEnvString('AI_PROVIDER') === 'multi') {
-      mode = 'multi';
-    } else if (
-      selectedProviderIds.length === 2
-      || (isSupportedProvider(envPrimaryProvider) && isSupportedProvider(envFallbackProvider))
-    ) {
-      mode = 'fallback';
-    }
-
     let primaryProvider = null;
     let fallbackProvider = null;
 
@@ -163,14 +170,14 @@ class CredentialManager {
       primaryProvider = null;
       fallbackProvider = null;
     } else if (mode === 'fallback') {
-      primaryProvider = isSupportedProvider(envPrimaryProvider) && selectedProviderIds.includes(envPrimaryProvider)
+      primaryProvider = envPrimaryProvider && selectedProviderIds.includes(envPrimaryProvider)
         ? envPrimaryProvider
         : selectedProviderIds[0] || null;
-      fallbackProvider = isSupportedProvider(envFallbackProvider) && selectedProviderIds.includes(envFallbackProvider) && envFallbackProvider !== primaryProvider
+      fallbackProvider = envFallbackProvider && selectedProviderIds.includes(envFallbackProvider) && envFallbackProvider !== primaryProvider
         ? envFallbackProvider
         : selectedProviderIds.find(providerId => providerId !== primaryProvider) || null;
     } else {
-      primaryProvider = isSupportedProvider(envPrimaryProvider) && selectedProviderIds.includes(envPrimaryProvider)
+      primaryProvider = envPrimaryProvider && selectedProviderIds.includes(envPrimaryProvider)
         ? envPrimaryProvider
         : selectedProviderIds[0] || null;
       fallbackProvider = null;
@@ -184,7 +191,7 @@ class CredentialManager {
     }
 
     return {
-      mode,
+      mode: mode || (selectedProviderIds.length <= 1 ? 'single' : selectedProviderIds.length === 2 ? 'fallback' : 'multi'),
       primaryProvider,
       fallbackProvider,
       enabledProviders: selectedProviderIds,
@@ -257,7 +264,6 @@ class CredentialManager {
           envEnabledProviders.includes(providerId)
           || Object.prototype.hasOwnProperty.call(envProviders, providerId)
           || Object.prototype.hasOwnProperty.call(envSelectedModels, providerId)
-          || Boolean(this._getProviderEnvironmentConfig(providerId).apiKey)
         ))
       );
     };

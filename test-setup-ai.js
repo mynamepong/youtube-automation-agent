@@ -135,6 +135,7 @@ const youtubeTokens = {
 
 const providerEnvKeys = [
   'AI_PROVIDER',
+  'AI_MODE',
   'AI_PRIMARY_PROVIDER',
   'AI_FALLBACK_PROVIDER',
   'AI_MODEL',
@@ -254,6 +255,12 @@ function expectNormalizedConfig(config, expected) {
     assert.deepEqual(config.selectedModels || {}, expected.selectedModels);
   }
 
+  if (Array.isArray(expected.absentProviders)) {
+    for (const providerId of expected.absentProviders) {
+      assert.ok(!config.providers[providerId], `Expected provider to be absent: ${providerId}`);
+    }
+  }
+
   for (const [providerId, providerExpectation] of Object.entries(expected.providers)) {
     const providerConfig = config.providers[providerId];
     assert.ok(providerConfig, `Missing provider config for ${providerId}`);
@@ -326,6 +333,7 @@ async function runEnvMergeCase() {
     'UNRELATED_FLAG=true',
     'TARGET_AUDIENCE=existing audience',
     'AI_PROVIDER=openai',
+    'AI_MODE=single',
     'AI_ENABLED_PROVIDERS=openai',
   ].join('\n');
 
@@ -389,6 +397,7 @@ async function runEnvMergeCase() {
   assert.match(merged, /KEEP_ME=1/);
   assert.match(merged, /UNRELATED_FLAG=true/);
   assert.match(merged, /AI_PROVIDER=gemini/);
+  assert.match(merged, /AI_MODE=fallback/);
   assert.match(merged, /AI_PRIMARY_PROVIDER=gemini/);
   assert.match(merged, /AI_FALLBACK_PROVIDER=deepseek/);
   assert.match(merged, /AI_ENABLED_PROVIDERS=gemini,deepseek/);
@@ -421,12 +430,12 @@ async function runValidationMatrix() {
       fallbackProvider: null,
       enabledProviders: ['openai'],
       selectedModels: {
-        openai: 'gpt-5.5',
+        openai: 'provider-live-model',
       },
       providers: {
         openai: {
           enabled: true,
-          model: 'gpt-5.5',
+          model: 'provider-live-model',
         },
       },
     }),
@@ -437,13 +446,13 @@ async function runValidationMatrix() {
       fallbackProvider: null,
       enabledProviders: ['openai'],
       selectedModels: {
-        openai: 'gpt-5.5',
+        openai: 'provider-live-model',
       },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai-env',
-          model: 'gpt-5.5',
+          model: 'provider-live-model',
           baseUrl: null,
         },
       },
@@ -488,6 +497,99 @@ async function runValidationMatrix() {
           baseUrl: null,
         },
       },
+    },
+  );
+
+  await runValidationCase(
+    'env-ai-mode-multi-with-two-providers',
+    buildBaseCredentials(),
+    {
+      valid: true,
+      mode: 'multi',
+      primaryProvider: null,
+      fallbackProvider: null,
+      enabledProviders: ['openai', 'gemini'],
+      selectedModels: {},
+      providers: {
+        openai: {
+          enabled: true,
+          apiKey: 'sk-openai-env',
+          model: null,
+          baseUrl: null,
+        },
+        gemini: {
+          enabled: true,
+          apiKey: 'gemini-env',
+          model: null,
+          baseUrl: null,
+        },
+      },
+    },
+    {
+      AI_MODE: 'multi',
+      AI_PROVIDER: 'single',
+      AI_ENABLED_PROVIDERS: 'openai,gemini',
+      OPENAI_API_KEY: 'sk-openai-env',
+      GEMINI_API_KEY: 'gemini-env',
+      AI_MODEL: 'provider-live-model',
+    },
+  );
+
+  await runValidationCase(
+    'env-enabled-providers-ignore-stale-api-keys',
+    buildBaseCredentials(),
+    {
+      valid: true,
+      mode: 'fallback',
+      primaryProvider: 'gemini',
+      fallbackProvider: 'deepseek',
+      enabledProviders: ['gemini', 'deepseek'],
+      selectedModels: {},
+      absentProviders: ['openai'],
+      providers: {
+        gemini: {
+          enabled: true,
+          apiKey: 'gemini-key',
+          model: null,
+          baseUrl: null,
+        },
+        deepseek: {
+          enabled: true,
+          apiKey: 'deepseek-key',
+          model: null,
+          baseUrl: 'https://api.deepseek.com',
+        },
+      },
+    },
+    {
+      AI_ENABLED_PROVIDERS: 'gemini,deepseek',
+      GEMINI_API_KEY: 'gemini-key',
+      DEEPSEEK_API_KEY: 'deepseek-key',
+      OPENAI_API_KEY: 'stale-openai-key',
+    },
+  );
+
+  await runValidationCase(
+    'env-openai-api-key-infers-provider-when-selection-vars-absent',
+    buildBaseCredentials(),
+    {
+      valid: true,
+      mode: 'single',
+      primaryProvider: 'openai',
+      fallbackProvider: null,
+      enabledProviders: ['openai'],
+      selectedModels: {},
+      providers: {
+        openai: {
+          enabled: true,
+          apiKey: 'sk-openai-env',
+          model: null,
+          baseUrl: null,
+        },
+      },
+    },
+    {
+      OPENAI_API_KEY: 'sk-openai-env',
     },
   );
 
@@ -654,14 +756,14 @@ async function runValidationMatrix() {
       fallbackProvider: 'gemini',
       enabledProviders: ['openai', 'gemini'],
       selectedModels: {
-        openai: 'gpt-5.5',
+        openai: 'provider-live-model',
         gemini: 'gemini-2.5-flash',
       },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai',
-          model: 'gpt-5.5',
+          model: 'provider-live-model',
         },
         gemini: {
           enabled: true,
@@ -677,14 +779,14 @@ async function runValidationMatrix() {
       fallbackProvider: 'gemini',
       enabledProviders: ['openai', 'gemini'],
       selectedModels: {
-        openai: 'gpt-5.5',
+        openai: 'provider-live-model',
         gemini: 'gemini-2.5-flash',
       },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai',
-          model: 'gpt-5.5',
+          model: 'provider-live-model',
           baseUrl: null,
         },
         gemini: {
@@ -778,12 +880,12 @@ async function runNegativeValidationMatrix() {
       fallbackProvider: null,
       enabledProviders: ['openai'],
       selectedModels: {
-        openai: 'gpt-5.5',
+        openai: 'provider-live-model',
       },
       providers: {
         openai: {
           enabled: true,
-          model: 'gpt-5.5',
+          model: 'provider-live-model',
         },
       },
     }),
@@ -839,7 +941,7 @@ async function runMigrationMatrix() {
       youtube: youtubeCredentials,
       openai: {
         apiKey: 'sk-openai-legacy',
-        model: 'gpt-5.5',
+        model: 'provider-live-model',
       },
     },
     {},
@@ -850,13 +952,13 @@ async function runMigrationMatrix() {
       fallbackProvider: null,
       enabledProviders: ['openai'],
       selectedModels: {
-        openai: 'gpt-5.5',
+        openai: 'provider-live-model',
       },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai-legacy',
-          model: 'gpt-5.5',
+          model: 'provider-live-model',
           baseUrl: null,
         },
       },
@@ -899,7 +1001,7 @@ async function runMigrationMatrix() {
       youtube: youtubeCredentials,
       openai: {
         apiKey: 'sk-openai-legacy',
-        model: 'gpt-5.5',
+        model: 'provider-live-model',
       },
       gemini: {
         apiKey: 'gemini-legacy',
@@ -914,14 +1016,14 @@ async function runMigrationMatrix() {
       fallbackProvider: 'gemini',
       enabledProviders: ['openai', 'gemini'],
       selectedModels: {
-        openai: 'gpt-5.5',
+        openai: 'provider-live-model',
         gemini: 'gemini-2.5-flash',
       },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai-legacy',
-          model: 'gpt-5.5',
+          model: 'provider-live-model',
           baseUrl: null,
         },
         gemini: {
@@ -942,7 +1044,7 @@ async function runMigrationMatrix() {
     {
       AI_PRIMARY_PROVIDER: 'openai',
       AI_ENABLED_PROVIDERS: 'openai,gemini',
-      AI_MODEL: 'gpt-5.5',
+      AI_MODEL: 'provider-live-model',
       OPENAI_API_KEY: 'sk-openai-env',
       GEMINI_API_KEY: 'gemini-env',
     },
@@ -953,13 +1055,13 @@ async function runMigrationMatrix() {
       fallbackProvider: 'gemini',
       enabledProviders: ['openai', 'gemini'],
       selectedModels: {
-        openai: 'gpt-5.5',
+        openai: 'provider-live-model',
       },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai-env',
-          model: 'gpt-5.5',
+          model: 'provider-live-model',
           baseUrl: null,
         },
         gemini: {

@@ -1,51 +1,5 @@
 {
-  "openai": [
-    {
-      "id": "gpt-5.5",
-      "displayName": "GPT-5.5",
-      "tier": "premium",
-      "capabilities": {
-        "text": true,
-        "vision": true,
-        "audio": false,
-        "reasoning": true,
-        "json": true
-      },
-      "providerDocsUrl": "https://platform.openai.com/docs/models",
-      "verifiedAt": "2026-05-20",
-      "verificationNote": "Exact model ID appears in the official OpenAI model page under Frontier models."
-    },
-    {
-      "id": "gpt-5.4",
-      "displayName": "GPT-5.4",
-      "tier": "balanced",
-      "capabilities": {
-        "text": true,
-        "vision": true,
-        "audio": false,
-        "reasoning": true,
-        "json": true
-      },
-      "providerDocsUrl": "https://platform.openai.com/docs/models",
-      "verifiedAt": "2026-05-20",
-      "verificationNote": "Exact model ID appears in the official OpenAI model page under Frontier models."
-    },
-    {
-      "id": "gpt-5.4-mini",
-      "displayName": "GPT-5.4 Mini",
-      "tier": "cheap",
-      "capabilities": {
-        "text": true,
-        "vision": true,
-        "audio": false,
-        "reasoning": true,
-        "json": true
-      },
-      "providerDocsUrl": "https://platform.openai.com/docs/models",
-      "verifiedAt": "2026-05-20",
-      "verificationNote": "Exact model ID appears in the official OpenAI model page under Frontier models."
-    }
-  ],
+  "openai": [],
   "gemini": [
     {
       "id": "gemini-2.5-pro",

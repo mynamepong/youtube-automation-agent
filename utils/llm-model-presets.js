@@ -1,10 +1,10 @@
 const TEMPORARY_MODEL_PRESETS = Object.freeze({
   openai: Object.freeze([
     { name: 'MODEL_ID_SELECTED_DURING_SETUP', value: 'MODEL_ID_SELECTED_DURING_SETUP' },
-    { name: 'gpt-5.5', value: 'gpt-5.5' },
-    { name: 'gpt-5.4', value: 'gpt-5.4' },
-    { name: 'gpt-5.4-mini', value: 'gpt-5.4-mini' },
-    { name: 'gpt-5.4-nano', value: 'gpt-5.4-nano' },
+    { name: 'provider-live-model', value: 'provider-live-model' },
+    { name: 'provider-balanced-live-model', value: 'provider-balanced-live-model' },
+    { name: 'provider-cheap-live-model', value: 'provider-cheap-live-model' },
+    { name: 'provider-fallback-test-model', value: 'provider-fallback-test-model' },
   ]),
   gemini: Object.freeze([
     { name: 'MODEL_ID_SELECTED_DURING_SETUP', value: 'MODEL_ID_SELECTED_DURING_SETUP' },

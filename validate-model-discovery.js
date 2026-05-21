@@ -146,12 +146,10 @@ async function runValidation() {
       ]),
     },
   );
-  assert.equal(fallbackOpenAIResult.ok, true);
-  assert.equal(fallbackOpenAIResult.source, 'fallback');
-  assert.ok(fallbackOpenAIResult.warning.includes('verified fallback model list'));
-  assertContainsAll(modelIds(fallbackOpenAIResult), ['provider-embedding-model', 'provider-preview-model']);
-  assert.ok(fallbackOpenAIResult.recommendedModels.length > 0);
-  assert.ok(fallbackOpenAIResult.recommendedModels.every(model => model.source === 'fallback'));
+  assert.equal(fallbackOpenAIResult.ok, false);
+  assert.equal(fallbackOpenAIResult.source, 'live');
+  assert.match(fallbackOpenAIResult.warning, /manual entry required/i);
+  assert.deepStrictEqual(fallbackOpenAIResult.recommendedModels, []);
 
   const emptyFallbackResult = await discoverModels(
     'openai_compatible_custom',

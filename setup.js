@@ -87,6 +87,7 @@ class YouTubeAutomationSetup {
       '',
       '# AI Provider Configuration',
       'AI_PROVIDER=',
+      'AI_MODE=',
       'AI_PRIMARY_PROVIDER=',
       'AI_FALLBACK_PROVIDER=',
       'AI_MODEL=',
@@ -199,7 +200,8 @@ class YouTubeAutomationSetup {
     };
 
     const envUpdates = {
-      AI_PROVIDER: aiConfig?.mode === 'multi' ? 'multi' : (primaryProvider || selectedProviders[0] || ''),
+      AI_PROVIDER: aiConfig?.mode === 'multi' ? 'multi' : primaryProvider,
+      AI_MODE: aiConfig?.mode || '',
       AI_PRIMARY_PROVIDER: primaryProvider,
       AI_FALLBACK_PROVIDER: fallbackProvider,
       AI_MODEL: resolvePrimaryModel(),

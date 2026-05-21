@@ -239,13 +239,13 @@ async function main() {
         fallbackProvider: null,
         enabledProviders: ['openai'],
         selectedModels: {
-          openai: 'gpt-5.5',
+          openai: 'provider-live-model',
         },
         providers: {
           openai: {
             enabled: true,
             apiKey: 'sk-openai',
-            model: 'gpt-5.5',
+            model: 'provider-live-model',
           },
         },
       },
@@ -257,13 +257,13 @@ async function main() {
       fallbackProvider: null,
       enabledProviders: ['openai'],
       selectedModels: {
-        openai: 'gpt-5.5',
+        openai: 'provider-live-model',
       },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai',
-          model: 'gpt-5.5',
+          model: 'provider-live-model',
           baseUrl: null,
         },
       },
@@ -527,14 +527,14 @@ async function main() {
         fallbackProvider: 'gemini',
         enabledProviders: ['openai', 'gemini'],
         selectedModels: {
-          openai: 'gpt-5.4-mini',
+          openai: 'provider-cheap-live-model',
           gemini: 'gemini-2.5-flash',
         },
         providers: {
           openai: {
             enabled: true,
             apiKey: 'sk-openai',
-            model: 'gpt-5.4-mini',
+            model: 'provider-cheap-live-model',
           },
           gemini: {
             enabled: true,
@@ -551,14 +551,14 @@ async function main() {
       fallbackProvider: 'gemini',
       enabledProviders: ['openai', 'gemini'],
       selectedModels: {
-        openai: 'gpt-5.4-mini',
+        openai: 'provider-cheap-live-model',
         gemini: 'gemini-2.5-flash',
       },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai',
-          model: 'gpt-5.4-mini',
+          model: 'provider-cheap-live-model',
           baseUrl: null,
         },
         gemini: {
@@ -636,7 +636,7 @@ async function main() {
         fallbackProvider: null,
         enabledProviders: ['openai', 'gemini', 'anthropic'],
         selectedModels: {
-          openai: 'gpt-5.4',
+          openai: 'provider-balanced-live-model',
           gemini: 'gemini-2.5-flash',
           anthropic: 'claude-haiku-4.5',
         },
@@ -666,7 +666,7 @@ async function main() {
       fallbackProvider: null,
       enabledProviders: ['openai', 'gemini', 'anthropic'],
       selectedModels: {
-        openai: 'gpt-5.4',
+        openai: 'provider-balanced-live-model',
         gemini: 'gemini-2.5-flash',
         anthropic: 'claude-haiku-4.5',
       },
@@ -674,7 +674,7 @@ async function main() {
         openai: {
           enabled: true,
           apiKey: 'sk-openai',
-          model: 'gpt-5.4',
+          model: 'provider-balanced-live-model',
           baseUrl: null,
         },
         gemini: {
@@ -785,14 +785,14 @@ async function main() {
         fallbackProvider: null,
         enabledProviders: ['openai', 'gemini', 'made_up_provider'],
         selectedModels: {
-          openai: 'gpt-5.5',
+          openai: 'provider-live-model',
           gemini: 'gemini-2.5-flash',
         },
         providers: {
           openai: {
             enabled: true,
             apiKey: 'sk-openai',
-            model: 'gpt-5.5',
+            model: 'provider-live-model',
           },
           gemini: {
             enabled: true,
@@ -814,14 +814,14 @@ async function main() {
       fallbackProvider: null,
       enabledProviders: ['openai', 'gemini'],
       selectedModels: {
-        openai: 'gpt-5.5',
+        openai: 'provider-live-model',
         gemini: 'gemini-2.5-flash',
       },
       providers: {
         openai: {
           enabled: true,
           apiKey: 'sk-openai',
-          model: 'gpt-5.5',
+          model: 'provider-live-model',
           baseUrl: null,
         },
         gemini: {
